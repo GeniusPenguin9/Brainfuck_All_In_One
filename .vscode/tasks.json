@@ -1,0 +1,56 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "npm",
+			"script": "compile",
+			"group": "build",
+			"path": "vscode-brainfuck",
+			"presentation": {
+				"panel": "dedicated",
+				"reveal": "never"
+			},
+			"problemMatcher": [
+				"$tsc"
+			]
+		},
+		{
+			"label": "npm_watch",
+			"type": "npm",
+			"script": "watch",
+			"isBackground": true,
+			"path": "vscode-brainfuck",
+			"group": "build",
+			"presentation": {
+				"panel": "dedicated",
+				"reveal": "never"
+			},
+			"problemMatcher": [
+				"$tsc-watch"
+			],
+			"detail": "tsc -b -w"
+		},
+		{
+			"type": "cargo",
+			"command": "build",
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"options": {
+				"cwd": "brainfuck-lsp"
+			},
+			"label": "rust: cargo build"
+		},
+		{
+			"label": "build all",
+			"dependsOn": [
+				"npm_watch",
+				"rust: cargo build"
+			]
+		}
+	]
+}

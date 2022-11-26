@@ -12,6 +12,9 @@ struct Backend {
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+        self.client
+            .log_message(MessageType::INFO, "server initializing...")
+            .await;
         Ok(InitializeResult::default())
     }
 
@@ -28,8 +31,6 @@ impl LanguageServer for Backend {
 
 #[tokio::main]
 async fn main() {
-    let format_res = formatter::my_format("aa");
-
     println!("hello");
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();

@@ -1,0 +1,16 @@
+{
+	"editor.insertSpaces": false,
+	"typescript.tsc.autoDetect": "off",
+	"typescript.preferences.quoteStyle": "single",
+	"editor.codeActionsOnSave": {
+		"source.fixAll.eslint": true
+	},
+	"files.exclude": {
+		"**/target": true,
+		"vscode-brainfuck/**/out": true,
+		"vscode-brainfuck/**/node_modules": true,
+		"vscode-brainfuck/client/server": true,
+		"vscode-brainfuck/**/.vscode-test": true,
+		"brainfuck-analyzer/target": true
+	}
+}
