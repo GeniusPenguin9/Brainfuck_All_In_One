@@ -22,7 +22,8 @@ let client: LanguageClient;
 
 export async function activate(context: ExtensionContext) {
 	const traceOutputChannel = window.createOutputChannel("Brainfuck Language Server");
-	const command = process.env.SERVER_PATH || "C:\\Users\\cauli\\source\\repos\\rust\\brainfuck-lsp\\brainfuck-lsp\\target\\debug\\brainfuck-lsp.exe";
+
+	const command = process.env.SERVER_PATH || context.asAbsolutePath("server/brainfuck-lsp.exe");
 	traceOutputChannel.appendLine("starting command: " + command);
 	const run: Executable = {
 		command,
@@ -41,7 +42,7 @@ export async function activate(context: ExtensionContext) {
 	// Options to control the language client
 	const clientOptions: LanguageClientOptions = {
 		// Register the server for plain text documents
-		documentSelector: [{ pattern: "*.bf" }],
+		documentSelector: [{ pattern: "**/*.bf" }],
 		synchronize: {
 			// Notify the server about file changes to '.clientrc files contained in the workspace
 			fileEvents: workspace.createFileSystemWatcher("**/.clientrc"),
@@ -49,6 +50,7 @@ export async function activate(context: ExtensionContext) {
 		traceOutputChannel,
 		revealOutputChannelOn: RevealOutputChannelOn.Info
 	};
+
 
 	// Create the language client and start the client.
 	client = new LanguageClient("vscodeBrainfuck", "Brainfuck Language Server", serverOptions, clientOptions);

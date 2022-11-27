@@ -2,8 +2,9 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"label": "npm_compile",
 			"type": "npm",
-			"script": "compile",
+			"script": "vscode:prepublish",
 			"group": "build",
 			"path": "vscode-brainfuck",
 			"presentation": {
@@ -12,7 +13,8 @@
 			},
 			"problemMatcher": [
 				"$tsc"
-			]
+			],
+			"dependsOn": "rust: cargo build"
 		},
 		{
 			"label": "npm_watch",
@@ -28,7 +30,8 @@
 			"problemMatcher": [
 				"$tsc-watch"
 			],
-			"detail": "tsc -b -w"
+			"detail": "tsc -b -w",
+			"dependsOn": "rust: cargo build"
 		},
 		{
 			"type": "cargo",
@@ -48,8 +51,8 @@
 		{
 			"label": "build all",
 			"dependsOn": [
-				"npm_watch",
-				"rust: cargo build"
+				"npm_compile",
+				"npm_watch"
 			]
 		}
 	]

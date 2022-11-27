@@ -51,7 +51,7 @@
 	},
 	"main": "./client/out/extension",
 	"scripts": {
-		"vscode:prepublish": "npm run compile",
+		"vscode:prepublish": "npm run compile && make-dir server && cpy \"../brainfuck-lsp/target/debug/*.exe\" server",
 		"compile": "tsc -b",
 		"watch": "tsc -b -w",
 		"lint": "eslint ./client/src --ext .ts,.tsx",
@@ -63,7 +63,9 @@
 		"@typescript-eslint/eslint-plugin": "^5.42.0",
 		"@typescript-eslint/parser": "^5.42.0",
 		"eslint": "^8.26.0",
+		"make-dir-cli": "^3.0.0",
 		"mocha": "^9.2.1",
+		"cpy-cli": "^4.2.0",
 		"typescript": "^4.8.4"
 	}
 }
