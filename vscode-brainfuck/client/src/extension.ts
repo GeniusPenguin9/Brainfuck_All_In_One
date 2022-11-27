@@ -22,7 +22,7 @@ let client: LanguageClient;
 
 export async function activate(context: ExtensionContext) {
 	const traceOutputChannel = window.createOutputChannel("Brainfuck Language Server");
-	const command = process.env.SERVER_PATH || "D:\\repos\\brainfuck-lsp\\brainfuck-lsp\\target\\debug\\brainfuck-lsp.exe";
+	const command = process.env.SERVER_PATH || "C:\\Users\\cauli\\source\\repos\\rust\\brainfuck-lsp\\brainfuck-lsp\\target\\debug\\brainfuck-lsp.exe";
 	traceOutputChannel.appendLine("starting command: " + command);
 	const run: Executable = {
 		command,

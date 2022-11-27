@@ -33,6 +33,25 @@ impl LanguageServer for Backend {
     async fn shutdown(&self) -> Result<()> {
         Ok(())
     }
+
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
+        let _ = params;
+        let range = Range::new(
+            Position {
+                line: 1,
+                character: 0,
+            },
+            Position {
+                line: 20,
+                character: 0,
+            },
+        );
+
+        Ok(Some(vec![TextEdit {
+            range,
+            new_text: "".to_string(),
+        }]))
+    }
 }
 
 #[tokio::main]
