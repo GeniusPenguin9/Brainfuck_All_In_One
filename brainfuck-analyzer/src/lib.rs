@@ -66,6 +66,11 @@ pub struct ParseError {
     pub error_message: String,
 }
 
+pub struct ParseResult {
+    pub position: Position,
+    pub parse_token_group: TokenGroup,
+}
+
 pub type Result<T> = std::result::Result<T, ParseError>;
 
 struct CharsWithPosition<'a> {
@@ -93,7 +98,7 @@ impl TokenGroup {
     }
 }
 
-pub fn parse(str: &str) -> Result<TokenGroup> {
+pub fn parse(str: &str) -> Result<ParseResult> {
     let chars = str.chars();
     let mut chars_with_position = CharsWithPosition {
         last_position: None,
@@ -107,12 +112,12 @@ pub fn parse(str: &str) -> Result<TokenGroup> {
     _parse(&mut chars_with_position, true)
 }
 
-fn _parse(chars: &mut CharsWithPosition, is_top: bool) -> Result<TokenGroup> {
+fn _parse(chars: &mut CharsWithPosition, is_top: bool) -> Result<ParseResult> {
     let mut v = Vec::new();
     let mut stopped = false;
     while let Some(c) = chars.next() {
         let res = match c {
-            '[' => Token::SubGroup(Box::new(_parse(chars, false)?)),
+            '[' => Token::SubGroup(Box::new(_parse(chars, false)?.parse_token_group)),
             ']' => {
                 stopped = true;
                 break;
@@ -154,7 +159,10 @@ fn _parse(chars: &mut CharsWithPosition, is_top: bool) -> Result<TokenGroup> {
             error_message: "More [ found".to_string(),
         })
     } else {
-        Ok(TokenGroup { token_group: v })
+        Ok(ParseResult {
+            position: chars.position,
+            parse_token_group: TokenGroup { token_group: v },
+        })
     }
 }
 
@@ -162,9 +170,12 @@ fn _parse(chars: &mut CharsWithPosition, is_top: bool) -> Result<TokenGroup> {
 fn parse_should_success() {
     let actual = parse(">[[]<]").unwrap();
 
-    assert_eq!(2, actual.token_group.len());
-    assert_eq!(Token::PointerIncrement, actual.token_group[0]);
-    match &actual.token_group[1] {
+    assert_eq!(2, actual.parse_token_group.token_group.len());
+    assert_eq!(
+        Token::PointerIncrement,
+        actual.parse_token_group.token_group[0]
+    );
+    match &actual.parse_token_group.token_group[1] {
         Token::SubGroup(tg) => {
             assert!(matches!(& tg.token_group[0], Token::SubGroup(x) if x.token_group.len() ==0));
             assert_eq!(Token::PointerDecrement, tg.token_group[1]);

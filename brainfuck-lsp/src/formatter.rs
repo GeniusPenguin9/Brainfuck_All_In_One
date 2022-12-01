@@ -1,13 +1,22 @@
-use brainfuck_analyzer::{Token, TokenGroup};
+use brainfuck_analyzer::{ParseError, Position, Range, Token, TokenGroup};
 
-pub fn format_string(input: &str) -> String {
-    let token_group = brainfuck_analyzer::parse(input);
-    println!("Emmmmmmmmmm \n{:?}", token_group);
+pub struct FormatResult {
+    pub range: Range,
+    pub format_result: String,
+}
 
-    match token_group {
-        Ok(x) => _print(&x, 0),
-        Err(_) => input.to_string(),
-    }
+pub fn format_string(input: &str) -> Result<FormatResult, ParseError> {
+    let token_group = brainfuck_analyzer::parse(input)?;
+    Ok(FormatResult {
+        range: Range {
+            start: Position {
+                line: 0,
+                character: 0,
+            },
+            end: token_group.position,
+        },
+        format_result: _print(&token_group.parse_token_group, 0),
+    })
 }
 
 fn _print(token_group: &TokenGroup, tab_number: usize) -> String {
@@ -50,7 +59,10 @@ fn n_tab(tab_number: usize) -> String {
 
 #[test]
 fn test_should_success() {
-    let actual = format_string(">[>[<,]]");
-    print!("Actual value:\n{}", actual);
-    assert_eq!(">\n[\n    >\n    [\n        <\n        ,\n    ]\n]", actual);
+    let actual = format_string(">[>[<,]]").unwrap();
+    print!("Actual value:\n{}", actual.format_result);
+    assert_eq!(
+        ">\n[\n    >\n    [\n        <\n        ,\n    ]\n]",
+        actual.format_result
+    );
 }

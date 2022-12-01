@@ -1,5 +1,12 @@
+use std::fmt::format;
+use std::fs;
+
+use formatter::format_string;
 use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::*;
+use tower_lsp::lsp_types::{
+    DocumentFormattingParams, InitializeParams, InitializeResult, InitializedParams, MessageType,
+    OneOf, ServerCapabilities, ServerInfo, TextEdit,
+};
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 pub mod formatter;
@@ -7,6 +14,19 @@ pub mod formatter;
 #[derive(Debug)]
 struct Backend {
     client: Client,
+}
+
+fn convert_range(input: brainfuck_analyzer::Range) -> tower_lsp::lsp_types::Range {
+    tower_lsp::lsp_types::Range {
+        start: tower_lsp::lsp_types::Position {
+            line: input.start.line,
+            character: input.start.character,
+        },
+        end: tower_lsp::lsp_types::Position {
+            line: input.end.line,
+            character: input.end.character,
+        },
+    }
 }
 
 #[tower_lsp::async_trait]
@@ -35,22 +55,26 @@ impl LanguageServer for Backend {
     }
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        let _ = params;
-        let range = Range::new(
-            Position {
-                line: 0,
-                character: 0,
-            },
-            Position {
-                line: 0,
-                character: 1,
-            },
-        );
+        self.client
+            .log_message(MessageType::INFO, format!("{:?}", params))
+            .await;
 
-        Ok(Some(vec![TextEdit {
-            range,
-            new_text: "*".to_string(),
-        }]))
+        if let Ok(file) = params.text_document.uri.to_file_path() {
+            let contents = fs::read_to_string(file)
+                .expect(format!("Something went wrong reading the file: ").as_str());
+
+            let format_res = format_string(&contents);
+
+            match format_res {
+                Ok(f) => Ok(Some(vec![TextEdit {
+                    range: convert_range(f.range),
+                    new_text: f.format_result,
+                }])),
+                Err(_) => Ok(None),
+            }
+        } else {
+            Ok(None)
+        }
     }
 }
 
