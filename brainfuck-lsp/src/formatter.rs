@@ -1,13 +1,16 @@
 use brainfuck_analyzer::{Token, TokenGroup};
 
-pub fn my_format(str: &str) -> String {
-    let token_group = brainfuck_analyzer::parse(str);
+pub fn format_string(input: &str) -> String {
+    let token_group = brainfuck_analyzer::parse(input);
     println!("Emmmmmmmmmm \n{:?}", token_group);
-    _print(&token_group, 0)
+
+    match token_group {
+        Ok(x) => _print(&x, 0),
+        Err(_) => input.to_string(),
+    }
 }
 
 fn _print(token_group: &TokenGroup, tab_number: usize) -> String {
-    let tab = "    ".to_string();
     let enter: String = "\n".to_string();
 
     let mut output = String::new();
@@ -47,7 +50,7 @@ fn n_tab(tab_number: usize) -> String {
 
 #[test]
 fn test_should_success() {
-    let actual = my_format(">[>[<,]]");
+    let actual = format_string(">[>[<,]]");
     print!("Actual value:\n{}", actual);
     assert_eq!(">\n[\n    >\n    [\n        <\n        ,\n    ]\n]", actual);
 }
