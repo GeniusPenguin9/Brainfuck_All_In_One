@@ -38,18 +38,18 @@ impl LanguageServer for Backend {
         let _ = params;
         let range = Range::new(
             Position {
-                line: 1,
+                line: 0,
                 character: 0,
             },
             Position {
-                line: 20,
-                character: 0,
+                line: 0,
+                character: 1,
             },
         );
 
         Ok(Some(vec![TextEdit {
             range,
-            new_text: "".to_string(),
+            new_text: "*".to_string(),
         }]))
     }
 }
