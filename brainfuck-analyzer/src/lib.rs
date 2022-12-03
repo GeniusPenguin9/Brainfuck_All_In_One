@@ -128,7 +128,7 @@ fn _parse(chars: &mut CharsWithPosition, is_top: bool) -> Result<ParseResult> {
             '-' => Token::Decrement,
             '.' => Token::Output,
             ',' => Token::Accept,
-            ' ' | '\n' | '\t' | '\r' => break,
+            ' ' | '\n' | '\t' | '\r' => continue,
             _ => {
                 return Err(ParseError {
                     range: Range {
@@ -192,4 +192,9 @@ fn parse_more_start_should_error() {
 #[test]
 fn parse_more_stop_should_error() {
     assert_eq!(true, parse("]").is_err());
+}
+
+#[test]
+fn parse_success() {
+    assert_eq!(true, parse("[\r\n    >\r\n    >\r\n    ,\r\n][]").is_ok());
 }

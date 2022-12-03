@@ -3,6 +3,11 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
+			"name": "(Windows) 附加",
+			"type": "cppvsdbg",
+			"request": "attach",
+		},
+		{
 			"type": "extensionHost",
 			"request": "launch",
 			"name": "Launch Client",

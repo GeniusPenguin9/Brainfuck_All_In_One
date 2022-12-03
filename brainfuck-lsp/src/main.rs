@@ -1,19 +1,25 @@
-use std::fmt::format;
-use std::fs;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use formatter::format_string;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
+    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DocumentFormattingParams, InitializeParams, InitializeResult, InitializedParams, MessageType,
-    OneOf, ServerCapabilities, ServerInfo, TextEdit,
+    OneOf, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
+    TextEdit, Url,
 };
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 pub mod formatter;
 
-#[derive(Debug)]
 struct Backend {
     client: Client,
+    text_documents: Arc<Mutex<HashMap<String, TextDocumentItemValue>>>,
+}
+pub struct TextDocumentItemValue {
+    pub version: i32,
+    pub text: String,
 }
 
 fn convert_range(input: brainfuck_analyzer::Range) -> tower_lsp::lsp_types::Range {
@@ -39,6 +45,9 @@ impl LanguageServer for Backend {
             }),
             capabilities: ServerCapabilities {
                 document_formatting_provider: Some(OneOf::Left(true)),
+                text_document_sync: Some(TextDocumentSyncCapability::Kind(
+                    TextDocumentSyncKind::FULL,
+                )),
                 ..Default::default()
             },
         })
@@ -56,25 +65,90 @@ impl LanguageServer for Backend {
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         self.client
-            .log_message(MessageType::INFO, format!("{:?}", params))
+            .log_message(
+                MessageType::INFO,
+                format!("{:?}", params.text_document.uri.to_string()),
+            )
             .await;
 
-        if let Ok(file) = params.text_document.uri.to_file_path() {
-            let contents = fs::read_to_string(file)
-                .expect(format!("Something went wrong reading the file: ").as_str());
+        let url = params.text_document.uri.to_string();
+        let res;
+        let mut err = None;
+        {
+            let hash_map = self.text_documents.lock().unwrap();
 
-            let format_res = format_string(&contents);
+            res = if let Some(contents) = hash_map.get(&url) {
+                let format_res = format_string(&contents.text);
 
-            match format_res {
-                Ok(f) => Ok(Some(vec![TextEdit {
-                    range: convert_range(f.range),
-                    new_text: f.format_result,
-                }])),
-                Err(_) => Ok(None),
-            }
-        } else {
-            Ok(None)
+                match format_res {
+                    Ok(f) => Ok(Some(vec![TextEdit {
+                        range: convert_range(f.range),
+                        new_text: f.format_result,
+                    }])),
+                    Err(e) => {
+                        err = Some(e);
+                        Ok(None)
+                    }
+                }
+            } else {
+                Ok(None)
+            };
         }
+        self.client
+            .log_message(MessageType::INFO, format!("err = {:?}", err))
+            .await;
+        res
+    }
+
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        self.client
+            .log_message(MessageType::INFO, "file opened!")
+            .await;
+        self.when_change(
+            params.text_document.uri,
+            TextDocumentItemValue {
+                version: params.text_document.version,
+                text: params.text_document.text,
+            },
+        )
+        .await;
+    }
+
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        if let Some(text) = params.content_changes.first() {
+            self.when_change(
+                params.text_document.uri,
+                TextDocumentItemValue {
+                    version: params.text_document.version,
+                    text: text.text.clone(),
+                },
+            )
+            .await;
+        }
+    }
+
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        self.client
+            .log_message(MessageType::INFO, "file closed!")
+            .await;
+        let mut hash_map = self.text_documents.lock().unwrap();
+        hash_map.remove(&params.text_document.uri.to_string());
+    }
+}
+
+impl Backend {
+    async fn when_change(&self, url: Url, value: TextDocumentItemValue) {
+        self.client
+            .log_message(MessageType::INFO, format!("{:?}", url.to_string()))
+            .await;
+        let mut hash_map = self.text_documents.lock().unwrap();
+        let item = hash_map
+            .entry(url.to_string())
+            .or_insert(TextDocumentItemValue {
+                version: 0,
+                text: "".to_string(),
+            });
+        *item = value;
     }
 }
 
@@ -83,6 +157,9 @@ async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let (service, socket) = LspService::new(|client| Backend { client });
+    let (service, socket) = LspService::new(|client| Backend {
+        client,
+        text_documents: Default::default(),
+    });
     Server::new(stdin, stdout, socket).serve(service).await;
 }
