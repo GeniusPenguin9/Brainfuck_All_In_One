@@ -4,10 +4,11 @@ use std::sync::{Arc, Mutex};
 use formatter::format_string;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
-    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    DocumentFormattingParams, InitializeParams, InitializeResult, InitializedParams, MessageType,
-    OneOf, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
-    TextEdit, Url,
+    Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, DocumentFormattingParams, InitializeParams, InitializeResult,
+    InitializedParams, MessageType, OneOf, PublishDiagnosticsClientCapabilities,
+    ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit,
+    Url,
 };
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
@@ -141,14 +142,53 @@ impl Backend {
         self.client
             .log_message(MessageType::INFO, format!("{:?}", url.to_string()))
             .await;
-        let mut hash_map = self.text_documents.lock().unwrap();
-        let item = hash_map
-            .entry(url.to_string())
-            .or_insert(TextDocumentItemValue {
-                version: 0,
-                text: "".to_string(),
-            });
-        *item = value;
+        {
+            let mut hash_map = self.text_documents.lock().unwrap();
+            let item = hash_map
+                .entry(url.to_string())
+                .or_insert(TextDocumentItemValue {
+                    version: 0,
+                    text: "".to_string(),
+                });
+            *item = value;
+        }
+        self.check(url).await;
+    }
+
+    async fn check(&self, url: Url) {
+        self.client
+            .log_message(MessageType::INFO, format!("{:?}", url.to_string()))
+            .await;
+        let mut err = None;
+        let mut version = 0;
+        {
+            let hash_map = self.text_documents.lock().unwrap();
+            if let Some(contents) = hash_map.get(&url.to_string()) {
+                let format_res = brainfuck_analyzer::parse(&contents.text);
+                if let Err(parseError) = format_res {
+                    err = Some(parseError);
+                    version = contents.version;
+                }
+            }
+        }
+        if let Some(err) = err {
+            self.client
+                .publish_diagnostics(
+                    url,
+                    vec![Diagnostic {
+                        range: convert_range(err.range),
+                        severity: Some(DiagnosticSeverity::ERROR),
+                        message: err.error_message,
+                        ..Default::default()
+                    }],
+                    Some(version),
+                )
+                .await;
+        } else {
+            self.client
+                .publish_diagnostics(url, vec![], Some(version))
+                .await;
+        }
     }
 }
 
