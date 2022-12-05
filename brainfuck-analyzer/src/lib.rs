@@ -12,7 +12,7 @@ pub enum Token {
     Increment,
     Decrement,
     Output,
-    Accept,
+    Input,
     LoopStart,
     LoopEnd,
     SubGroup(Box<TokenGroup>),
@@ -112,6 +112,20 @@ pub fn parse(str: &str) -> Result<ParseResult> {
     _parse(&mut chars_with_position, true)
 }
 
+pub fn token_to_char(token: &Token) -> char {
+    match token {
+        Token::PointerIncrement => '>',
+        Token::PointerDecrement => '<',
+        Token::Increment => '+',
+        Token::Decrement => '-',
+        Token::Output => '.',
+        Token::Input => ',',
+        Token::LoopStart => '[',
+        Token::LoopEnd => ']',
+        _ => '?',
+    }
+}
+
 fn _parse(chars: &mut CharsWithPosition, is_top: bool) -> Result<ParseResult> {
     let mut v = Vec::new();
     let mut stopped = false;
@@ -127,7 +141,7 @@ fn _parse(chars: &mut CharsWithPosition, is_top: bool) -> Result<ParseResult> {
             '+' => Token::Increment,
             '-' => Token::Decrement,
             '.' => Token::Output,
-            ',' => Token::Accept,
+            ',' => Token::Input,
             ' ' | '\n' | '\t' | '\r' => continue,
             _ => {
                 return Err(ParseError {

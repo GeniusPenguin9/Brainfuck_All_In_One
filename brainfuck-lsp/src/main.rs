@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use formatter::format_string;
+use formatter::format_pretty_string;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, DocumentFormattingParams, InitializeParams, InitializeResult,
-    InitializedParams, MessageType, OneOf, PublishDiagnosticsClientCapabilities,
-    ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit,
-    Url,
+    InitializedParams, MessageType, OneOf, ServerCapabilities, ServerInfo,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
 };
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
@@ -79,7 +78,7 @@ impl LanguageServer for Backend {
             let hash_map = self.text_documents.lock().unwrap();
 
             res = if let Some(contents) = hash_map.get(&url) {
-                let format_res = format_string(&contents.text);
+                let format_res = format_pretty_string(&contents.text);
 
                 match format_res {
                     Ok(f) => Ok(Some(vec![TextEdit {
@@ -165,8 +164,8 @@ impl Backend {
             let hash_map = self.text_documents.lock().unwrap();
             if let Some(contents) = hash_map.get(&url.to_string()) {
                 let format_res = brainfuck_analyzer::parse(&contents.text);
-                if let Err(parseError) = format_res {
-                    err = Some(parseError);
+                if let Err(parse_error) = format_res {
+                    err = Some(parse_error);
                     version = contents.version;
                 }
             }
