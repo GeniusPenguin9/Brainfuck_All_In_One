@@ -48,8 +48,10 @@ impl LanguageServer for Backend {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::FULL,
                 )),
+                inlay_hint_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
+            ..Default::default()
         })
     }
 

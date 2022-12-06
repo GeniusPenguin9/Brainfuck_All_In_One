@@ -7,6 +7,7 @@ import {
 	workspace,
 	ExtensionContext,
 	window,
+	languages,
 } from "vscode";
 
 import {
@@ -50,7 +51,6 @@ export async function activate(context: ExtensionContext) {
 		traceOutputChannel,
 		revealOutputChannelOn: RevealOutputChannelOn.Info
 	};
-
 
 	// Create the language client and start the client.
 	client = new LanguageClient("vscodeBrainfuck", "Brainfuck Language Server", serverOptions, clientOptions);

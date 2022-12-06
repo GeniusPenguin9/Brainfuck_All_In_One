@@ -7,5 +7,6 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.21.2", features = ["full"] }
-tower-lsp = "0.17.0"
+tower-lsp = {version="0.17.0", features=["proposed"]}
 brainfuck-analyzer = {path = "../brainfuck-analyzer"}
+
