@@ -303,25 +303,25 @@ impl<'a> TokenIter<'a> {
         let mut result = String::new();
 
         match self.pointer_increment_count - self.pointer_decrement_count {
-            x if x > 0 => result.push_str(&format!("Pointer increment {} ", x)),
-            x if x < 0 => result.push_str(&format!("Pointer decrement {} ", x.abs())),
+            x if x > 0 => result.push_str(&format!(">{} ", x)),
+            x if x < 0 => result.push_str(&format!("<{} ", x.abs())),
             _ => (),
         }
 
         match self.increment_count - self.decrement_count {
-            x if x > 0 => result.push_str(&format!("Value increment {} ", x)),
-            x if x < 0 => result.push_str(&format!("Value decrement {} ", x.abs())),
+            x if x > 0 => result.push_str(&format!("+{} ", x)),
+            x if x < 0 => result.push_str(&format!("-{} ", x.abs())),
             _ => (),
         }
 
         match self.output_count {
-            x if x > 0 => result.push_str(&format!("Output")),
+            x if x > 0 => result.push_str(&format!("output")),
             x if x < 0 => panic!(),
             _ => (),
         }
 
         match self.input_count {
-            x if x > 0 => result.push_str(&format!("Input")),
+            x if x > 0 => result.push_str(&format!("input")),
             x if x < 0 => panic!(),
             _ => (),
         }
