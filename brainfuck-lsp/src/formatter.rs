@@ -1,6 +1,8 @@
 use core::slice::Iter;
 
-use brainfuck_analyzer::{token_to_char, ParseError, Position, Range, Token, TokenGroup};
+use brainfuck_analyzer::{
+    token_to_char, ParseError, Position, Range, Token, TokenGroup, TokenType,
+};
 
 pub struct FormatResult {
     pub range: Range,
@@ -45,21 +47,21 @@ fn _print(token_group: &TokenGroup, tab_number: usize) -> String {
             output.push_str(&enter);
         }
         output.push_str(&n_tab(tab_number));
-        match token {
-            Token::SubGroup(x) => {
+        match &token.token_type {
+            TokenType::SubGroup(x) => {
                 output.push_str("[\n");
 
-                output.push_str(&format!("{}", _print(x, tab_number + 1)));
+                output.push_str(&format!("{}", _print(&x, tab_number + 1)));
                 output.push_str("\n");
                 output.push_str(&n_tab(tab_number));
                 output.push_str("]");
             }
-            Token::PointerIncrement => output.push_str(">"),
-            Token::PointerDecrement => output.push_str("<"),
-            Token::Increment => output.push_str("+"),
-            Token::Decrement => output.push_str("-"),
-            Token::Output => output.push_str("."),
-            Token::Input => output.push_str(","),
+            TokenType::PointerIncrement => output.push_str(">"),
+            TokenType::PointerDecrement => output.push_str("<"),
+            TokenType::Increment => output.push_str("+"),
+            TokenType::Decrement => output.push_str("-"),
+            TokenType::Output => output.push_str("."),
+            TokenType::Input => output.push_str(","),
             _ => output.push_str("?"),
         };
     }
@@ -93,34 +95,34 @@ impl<'a> TokenIter<'a> {
         let token_option = self.token_iter.next();
         if let Some(token) = token_option {
             match self.state {
-                TokenState::Move => match token {
-                    Token::PointerDecrement | Token::PointerIncrement => {
+                TokenState::Move => match &token.token_type {
+                    TokenType::PointerDecrement | TokenType::PointerIncrement => {
                         result.push(token_to_char(token));
                     }
-                    Token::Decrement | Token::Increment => {
+                    TokenType::Decrement | TokenType::Increment => {
                         self.state = TokenState::Change;
                         result.push(token_to_char(token));
                     }
-                    Token::Input | Token::Output => {
+                    TokenType::Input | TokenType::Output => {
                         self.state = TokenState::IO;
                         result.push(token_to_char(token));
                     }
-                    Token::SubGroup(sg) => {
+                    TokenType::SubGroup(sg) => {
                         self.state = TokenState::Default;
                         result.push('\n');
 
                         result.push_str(&n_tab(self.tab_number));
                         result.push_str("[\n");
 
-                        result.push_str(&format!("{}\n", _pretty_print(sg, self.tab_number + 1)));
+                        result.push_str(&format!("{}\n", _pretty_print(&sg, self.tab_number + 1)));
 
                         result.push_str(&n_tab(self.tab_number));
                         result.push_str("]\n");
                     }
                     _ => (),
                 },
-                TokenState::Change => match token {
-                    Token::PointerDecrement | Token::PointerIncrement => {
+                TokenState::Change => match &token.token_type {
+                    TokenType::PointerDecrement | TokenType::PointerIncrement => {
                         self.state = TokenState::Default;
                         result.push('\n');
 
@@ -128,29 +130,29 @@ impl<'a> TokenIter<'a> {
                         result.push_str(&n_tab(self.tab_number));
                         result.push(token_to_char(token));
                     }
-                    Token::Decrement | Token::Increment => {
+                    TokenType::Decrement | TokenType::Increment => {
                         result.push(token_to_char(token));
                     }
-                    Token::Input | Token::Output => {
+                    TokenType::Input | TokenType::Output => {
                         self.state = TokenState::IO;
                         result.push(token_to_char(token));
                     }
-                    Token::SubGroup(sg) => {
+                    TokenType::SubGroup(sg) => {
                         self.state = TokenState::Default;
                         result.push('\n');
 
                         result.push_str(&n_tab(self.tab_number));
                         result.push_str("[\n");
 
-                        result.push_str(&format!("{}\n", _pretty_print(sg, self.tab_number + 1)));
+                        result.push_str(&format!("{}\n", _pretty_print(&sg, self.tab_number + 1)));
 
                         result.push_str(&n_tab(self.tab_number));
                         result.push_str("]\n");
                     }
                     _ => (),
                 },
-                TokenState::IO => match token {
-                    Token::PointerDecrement | Token::PointerIncrement => {
+                TokenState::IO => match &token.token_type {
+                    TokenType::PointerDecrement | TokenType::PointerIncrement => {
                         self.state = TokenState::Default;
                         result.push('\n');
 
@@ -158,7 +160,7 @@ impl<'a> TokenIter<'a> {
                         result.push_str(&n_tab(self.tab_number));
                         result.push(token_to_char(token));
                     }
-                    Token::Decrement | Token::Increment => {
+                    TokenType::Decrement | TokenType::Increment => {
                         self.state = TokenState::Default;
                         result.push('\n');
 
@@ -166,44 +168,44 @@ impl<'a> TokenIter<'a> {
                         result.push_str(&n_tab(self.tab_number));
                         result.push(token_to_char(token));
                     }
-                    Token::Input | Token::Output => {
+                    TokenType::Input | TokenType::Output => {
                         result.push(token_to_char(token));
                     }
-                    Token::SubGroup(sg) => {
+                    TokenType::SubGroup(sg) => {
                         self.state = TokenState::Default;
                         result.push('\n');
 
                         result.push_str(&n_tab(self.tab_number));
                         result.push_str("[\n");
 
-                        result.push_str(&format!("{}\n", _pretty_print(sg, self.tab_number + 1)));
+                        result.push_str(&format!("{}\n", _pretty_print(&sg, self.tab_number + 1)));
 
                         result.push_str(&n_tab(self.tab_number));
                         result.push_str("]\n");
                     }
                     _ => (),
                 },
-                TokenState::Default => match token {
-                    Token::PointerDecrement | Token::PointerIncrement => {
+                TokenState::Default => match &token.token_type {
+                    TokenType::PointerDecrement | TokenType::PointerIncrement => {
                         self.state = TokenState::Move;
                         result.push_str(&n_tab(self.tab_number));
                         result.push(token_to_char(token));
                     }
-                    Token::Decrement | Token::Increment => {
+                    TokenType::Decrement | TokenType::Increment => {
                         self.state = TokenState::Change;
                         result.push_str(&n_tab(self.tab_number));
                         result.push(token_to_char(token));
                     }
-                    Token::Input | Token::Output => {
+                    TokenType::Input | TokenType::Output => {
                         self.state = TokenState::IO;
                         result.push_str(&n_tab(self.tab_number));
                         result.push(token_to_char(token));
                     }
-                    Token::SubGroup(sg) => {
+                    TokenType::SubGroup(sg) => {
                         result.push_str(&n_tab(self.tab_number));
                         result.push_str("[\n");
 
-                        result.push_str(&format!("{}\n", _pretty_print(sg, self.tab_number + 1)));
+                        result.push_str(&format!("{}\n", _pretty_print(&sg, self.tab_number + 1)));
 
                         result.push_str(&n_tab(self.tab_number));
                         result.push_str("]\n");

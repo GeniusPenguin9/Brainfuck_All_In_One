@@ -3,15 +3,18 @@ use std::sync::{Arc, Mutex};
 
 use formatter::format_pretty_string;
 use tower_lsp::jsonrpc::Result;
+// use tower_lsp::lsp_types::*;s
 use tower_lsp::lsp_types::{
     Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, DocumentFormattingParams, InitializeParams, InitializeResult,
-    InitializedParams, MessageType, OneOf, ServerCapabilities, ServerInfo,
-    TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
+    InitializedParams, InlayHint, InlayHintParams, MessageType, OneOf, ServerCapabilities,
+    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
 };
+
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 pub mod formatter;
+pub mod inlay_hint;
 
 struct Backend {
     client: Client,
@@ -32,6 +35,22 @@ fn convert_range(input: brainfuck_analyzer::Range) -> tower_lsp::lsp_types::Rang
             line: input.end.line,
             character: input.end.character,
         },
+    }
+}
+
+fn convert_inlay_hint(input: inlay_hint::InlayHint) -> tower_lsp::lsp_types::InlayHint {
+    tower_lsp::lsp_types::InlayHint {
+        position: tower_lsp::lsp_types::Position {
+            line: input.position.line,
+            character: input.position.character,
+        },
+        label: tower_lsp::lsp_types::InlayHintLabel::String(input.label),
+        kind: None,
+        text_edits: None,
+        tooltip: None,
+        padding_left: None,
+        padding_right: None,
+        data: None,
     }
 }
 
@@ -191,6 +210,40 @@ impl Backend {
                 .await;
         }
     }
+
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Vec<InlayHint>> {
+        self.client
+            .log_message(
+                MessageType::INFO,
+                format!("{:?}", params.text_document.uri.to_string()),
+            )
+            .await;
+
+        let url = params.text_document.uri.to_string();
+        let res;
+        let mut err = None;
+        {
+            let hash_map = self.text_documents.lock().unwrap();
+
+            res = if let Some(contents) = hash_map.get(&url) {
+                let inlay_hint_res = inlay_hint::InlayHint::inlay_hint_string(&contents.text);
+
+                match inlay_hint_res {
+                    Ok(f) => Ok(f.into_iter().map(convert_inlay_hint).collect()),
+                    Err(e) => {
+                        err = Some(e);
+                        Ok(Vec::new())
+                    }
+                }
+            } else {
+                Ok(Vec::new())
+            };
+        }
+        self.client
+            .log_message(MessageType::INFO, format!("err = {:?}", err))
+            .await;
+        res
+    }
 }
 
 #[tokio::main]
@@ -198,9 +251,11 @@ async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let (service, socket) = LspService::new(|client| Backend {
+    let (service, socket) = LspService::build(|client| Backend {
         client,
         text_documents: Default::default(),
-    });
+    })
+    .custom_method("textDocument/inlayHint", Backend::inlay_hint)
+    .finish();
     Server::new(stdin, stdout, socket).serve(service).await;
 }
