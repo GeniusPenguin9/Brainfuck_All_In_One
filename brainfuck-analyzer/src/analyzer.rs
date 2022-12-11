@@ -22,6 +22,7 @@ pub enum TokenType {
     LoopStart,
     LoopEnd,
     SubGroup(Box<TokenGroup>),
+    Comment(String),
 }
 
 /// Position in a text document expressed as zero-based line and character offset.
@@ -71,7 +72,7 @@ pub struct ParseError {
     pub range: Range,
     pub error_message: String,
 }
-
+#[derive(Debug)]
 pub struct ParseResult {
     pub position: Position,
     pub parse_token_group: TokenGroup,
@@ -79,11 +80,19 @@ pub struct ParseResult {
 
 pub type Result<T> = std::result::Result<T, ParseError>;
 
+enum ParseState {
+    BrainFuck,
+    LineComment((Position, String)),
+    ParagraphComment((Position, String)),
+}
+
 struct CharsWithPosition<'a> {
     last_position: Option<Position>,
     position: Position,
     chars: Chars<'a>,
+    state: ParseState,
 }
+
 impl<'a> CharsWithPosition<'a> {
     fn next(&mut self) -> Option<char> {
         let c_option = self.chars.next();
@@ -113,6 +122,7 @@ pub fn parse(str: &str) -> Result<ParseResult> {
             character: 0,
         },
         chars: chars,
+        state: ParseState::BrainFuck,
     };
 
     _parse(&mut chars_with_position, true)
@@ -131,46 +141,119 @@ pub fn token_to_char(token: &Token) -> char {
         _ => '?',
     }
 }
-
+//ddddd\n
 fn _parse(chars: &mut CharsWithPosition, is_top: bool) -> Result<ParseResult> {
     let mut v = Vec::new();
     let mut stopped = false;
     while let Some(c) = chars.next() {
-        let start = chars.last_position.unwrap_or_default();
-        let res = match c {
-            '[' => TokenType::SubGroup(Box::new(_parse(chars, false)?.parse_token_group)),
-            ']' => {
-                stopped = true;
-                break;
-            }
-            '>' => TokenType::PointerIncrement,
-            '<' => TokenType::PointerDecrement,
-            '+' => TokenType::Increment,
-            '-' => TokenType::Decrement,
-            '.' => TokenType::Output,
-            ',' => TokenType::Input,
-            ' ' | '\n' | '\t' | '\r' => continue,
-            _ => {
-                return Err(ParseError {
-                    range: Range {
-                        start: chars.last_position.unwrap_or_default(),
-                        end: chars.last_position.unwrap_or_default(),
+        match &mut chars.state {
+            ParseState::BrainFuck => {
+                let start = chars.last_position.unwrap_or_default();
+                let res = match c {
+                    '[' => TokenType::SubGroup(Box::new(_parse(chars, false)?.parse_token_group)),
+                    ']' => {
+                        stopped = true;
+                        break;
+                    }
+                    '>' => TokenType::PointerIncrement,
+                    '<' => TokenType::PointerDecrement,
+                    '+' => TokenType::Increment,
+                    '-' => TokenType::Decrement,
+                    '.' => TokenType::Output,
+                    ',' => TokenType::Input,
+                    ' ' | '\n' | '\t' | '\r' => continue,
+                    '/' => match chars.next() {
+                        Some('/') => {
+                            chars.state = ParseState::LineComment((start, "//".to_string()));
+                            continue;
+                        }
+                        Some('*') => {
+                            chars.state = ParseState::ParagraphComment((start, "/*".to_string()));
+                            continue;
+                        }
+                        _ => {
+                            return Err(ParseError {
+                                range: Range {
+                                    start: chars.last_position.unwrap_or_default(),
+                                    end: chars.last_position.unwrap_or_default(),
+                                },
+                                error_message: "Invalid token".to_string(),
+                            })
+                        }
                     },
-                    error_message: "Invalid token".to_string(),
-                })
+                    _ => {
+                        return Err(ParseError {
+                            range: Range {
+                                start: chars.last_position.unwrap_or_default(),
+                                end: chars.last_position.unwrap_or_default(),
+                            },
+                            error_message: "Invalid token".to_string(),
+                        })
+                    }
+                };
+                let range = Range {
+                    start: start,
+                    end: chars.position,
+                };
+                v.push(Token {
+                    range,
+                    token_type: res,
+                });
             }
-        };
-        let range = Range {
-            start: start,
-            end: chars.position,
-        };
+            ParseState::LineComment((start_position, org_str)) => {
+                org_str.push(c);
+                match c {
+                    '\n' | '\r' => {
+                        v.push(Token {
+                            range: Range {
+                                start: *start_position,
+                                end: chars.position,
+                            },
+                            token_type: TokenType::Comment(org_str.clone()),
+                        });
+                        chars.state = ParseState::BrainFuck;
+                    }
+                    _ => (),
+                };
+            }
+            ParseState::ParagraphComment((start_position, org_str)) => {
+                org_str.push(c);
+                if c == '/' {
+                    if org_str.len() >= 4 && &org_str[org_str.len() - 2..org_str.len() - 1] == "*" {
+                        v.push(Token {
+                            range: Range {
+                                start: *start_position,
+                                end: chars.position,
+                            },
+                            token_type: TokenType::Comment(org_str.clone()),
+                        });
+                        chars.state = ParseState::BrainFuck;
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+
+    if let ParseState::LineComment((start_position, org_str)) = &chars.state {
         v.push(Token {
-            range,
-            token_type: res,
+            range: Range {
+                start: *start_position,
+                end: chars.position,
+            },
+            token_type: TokenType::Comment(org_str.clone()),
         });
     }
 
-    if is_top && chars.next().is_some() {
+    if let ParseState::ParagraphComment(_) = &chars.state {
+        Err(ParseError {
+            range: Range {
+                start: chars.last_position.unwrap_or_default(),
+                end: chars.last_position.unwrap_or_default(),
+            },
+            error_message: "Paragraph comment missing end flag.".to_string(),
+        })
+    } else if is_top && chars.next().is_some() {
         Err(ParseError {
             range: Range {
                 start: chars.last_position.unwrap_or_default(),
@@ -211,6 +294,42 @@ fn parse_should_success() {
             assert_eq!(TokenType::PointerDecrement, tg.token_group[1].token_type);
         }
         _ => assert!(false),
+    }
+}
+
+#[test]
+fn parse_with_comment() {
+    let line_comment = parse(">>//todo").unwrap();
+    print!("{:?}", line_comment);
+    assert_eq!(3, line_comment.parse_token_group.token_group.len());
+    match &line_comment.parse_token_group.token_group[2].token_type {
+        TokenType::Comment(str) => {
+            assert_eq!(str, "//todo");
+        }
+        _ => assert!(false),
+    }
+
+    let paragraph_commet_success = parse(">>/*todo*/").unwrap();
+    print!("{:?}", paragraph_commet_success);
+    assert_eq!(
+        3,
+        paragraph_commet_success.parse_token_group.token_group.len()
+    );
+    match &paragraph_commet_success.parse_token_group.token_group[2].token_type {
+        TokenType::Comment(str) => {
+            assert_eq!(str, "/*todo*/");
+        }
+        _ => assert!(false),
+    }
+
+    let paragraph_commet_error = parse(">>/*todo??");
+    if let Err(parse_error) = paragraph_commet_error {
+        assert_eq!(
+            parse_error.error_message,
+            "Paragraph comment missing end flag."
+        );
+    } else {
+        assert!(false)
     }
 }
 
