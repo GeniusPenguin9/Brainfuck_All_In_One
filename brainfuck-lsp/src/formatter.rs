@@ -119,6 +119,13 @@ impl<'a> TokenIter<'a> {
                         result.push_str(&n_tab(self.tab_number));
                         result.push_str("]\n");
                     }
+                    TokenType::Comment(str) => {
+                        self.state = TokenState::Default;
+                        result.push('\n');
+
+                        result.push_str(str);
+                        result.push('\n');
+                    }
                     _ => (),
                 },
                 TokenState::Change => match &token.token_type {
@@ -148,6 +155,13 @@ impl<'a> TokenIter<'a> {
 
                         result.push_str(&n_tab(self.tab_number));
                         result.push_str("]\n");
+                    }
+                    TokenType::Comment(str) => {
+                        self.state = TokenState::Default;
+                        result.push('\n');
+
+                        result.push_str(str);
+                        result.push('\n');
                     }
                     _ => (),
                 },
@@ -183,6 +197,13 @@ impl<'a> TokenIter<'a> {
                         result.push_str(&n_tab(self.tab_number));
                         result.push_str("]\n");
                     }
+                    TokenType::Comment(str) => {
+                        self.state = TokenState::Default;
+                        result.push('\n');
+
+                        result.push_str(str);
+                        result.push('\n');
+                    }
                     _ => (),
                 },
                 TokenState::Default => match &token.token_type {
@@ -209,6 +230,10 @@ impl<'a> TokenIter<'a> {
 
                         result.push_str(&n_tab(self.tab_number));
                         result.push_str("]\n");
+                    }
+                    TokenType::Comment(str) => {
+                        result.push_str(str);
+                        result.push('\n');
                     }
                     _ => (),
                 },

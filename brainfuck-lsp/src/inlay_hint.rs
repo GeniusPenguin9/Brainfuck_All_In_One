@@ -115,6 +115,14 @@ impl<'a> TokenIter<'a> {
                         let mut sub_group_result = InlayHint::_inlay_hint(sg);
                         result.append(&mut sub_group_result);
                     }
+                    TokenType::Comment(_) => {
+                        self.state = TokenState::Default;
+                        result.push(InlayHint {
+                            position: self.last_position.unwrap(),
+                            label: self._count_to_label(),
+                        });
+                        self._reset_count();
+                    }
                     _ => (),
                 },
                 TokenState::Change => match &token.token_type {
@@ -164,6 +172,14 @@ impl<'a> TokenIter<'a> {
 
                         let mut sub_group_result = InlayHint::_inlay_hint(sg);
                         result.append(&mut sub_group_result);
+                    }
+                    TokenType::Comment(_) => {
+                        self.state = TokenState::Default;
+                        result.push(InlayHint {
+                            position: self.last_position.unwrap(),
+                            label: self._count_to_label(),
+                        });
+                        self._reset_count();
                     }
                     _ => (),
                 },
@@ -245,6 +261,14 @@ impl<'a> TokenIter<'a> {
                         let mut sub_group_result = InlayHint::_inlay_hint(sg);
                         result.append(&mut sub_group_result);
                     }
+                    TokenType::Comment(_) => {
+                        self.state = TokenState::Default;
+                        result.push(InlayHint {
+                            position: self.last_position.unwrap(),
+                            label: self._count_to_label(),
+                        });
+                        self._reset_count();
+                    }
                     _ => (),
                 },
                 TokenState::Default => match &token.token_type {
@@ -273,6 +297,12 @@ impl<'a> TokenIter<'a> {
                         self.output_count += 1;
                     }
                     TokenType::SubGroup(_) => {
+                        result.push(InlayHint {
+                            position: self.last_position.unwrap(),
+                            label: self._count_to_label(),
+                        });
+                    }
+                    TokenType::Comment(_) => {
                         result.push(InlayHint {
                             position: self.last_position.unwrap(),
                             label: self._count_to_label(),
