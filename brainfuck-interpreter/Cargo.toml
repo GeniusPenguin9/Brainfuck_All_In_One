@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 brainfuck-analyzer = {path = "../brainfuck-analyzer"}
+assembler = {path = "../../assembler/assembler"}

@@ -3,12 +3,13 @@ use std::fs;
 use interpreter::interpret;
 
 mod interpreter;
+mod jit;
 
 fn main() {
-    let file_path: Vec<String> = std::env::args().collect();
+    let args: Vec<String> = std::env::args().collect();
 
-    let contents =
-        fs::read_to_string(&file_path[1]).expect("Should have been able to read the file");
+    let contents = fs::read_to_string(&args[1]).expect("Should have been able to read the file");
 
-    interpret(&contents);
+    // TODO: support is_jit by user args
+    interpret(&contents, false);
 }

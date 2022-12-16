@@ -2,14 +2,16 @@ use std::io::Read;
 
 use brainfuck_analyzer::{parse, Token, TokenType};
 
-struct Memory {
-    index: usize,
-    memory: Vec<u8>,
+use crate::jit::{compile, run};
+
+pub struct BrainfuckMemory {
+    pub index: usize,
+    pub memory: Vec<u8>,
 }
 
-impl Memory {
-    pub fn new() -> Memory {
-        Memory {
+impl BrainfuckMemory {
+    pub fn new() -> BrainfuckMemory {
+        BrainfuckMemory {
             index: 0,
             memory: vec![0; 1000],
         }
@@ -62,12 +64,18 @@ impl Memory {
     }
 }
 
-pub fn interpret(input: &str) {
+pub fn interpret(input: &str, is_jit: bool) {
     let parse_result = parse(input).unwrap();
-    let iter = parse_result.parse_token_group.tokens().into_iter();
+    if is_jit {
+        let mut memory = BrainfuckMemory::new();
+        let jit_cache = compile(&parse_result.parse_token_group);
+        run(jit_cache, &mut memory);
+    } else {
+        let iter = parse_result.parse_token_group.tokens().into_iter();
 
-    let mut memory = Memory::new();
-    for token in iter {
-        memory.interpret_token(token);
+        let mut memory = BrainfuckMemory::new();
+        for token in iter {
+            memory.interpret_token(token);
+        }
     }
 }
