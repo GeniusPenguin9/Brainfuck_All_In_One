@@ -2,9 +2,11 @@ use std::mem::transmute;
 
 use assembler::mnemonic_parameter_types::memory::{Memory, MemoryOperand};
 use assembler::mnemonic_parameter_types::registers::Register64Bit::*;
+use assembler::mnemonic_parameter_types::registers::Register8Bit::*;
 use assembler::ExecutableAnonymousMemoryMap::ExecutableAnonymousMemoryMap;
 use assembler::InstructionStreamHints::InstructionStreamHints;
-use brainfuck_analyzer::{ TokenGroup, TokenType, parse};
+use assembler::InstructionStream::InstructionStream;
+use brainfuck_analyzer::{parse, TokenGroup, TokenType};
 
 use crate::interpreter::BrainfuckMemory;
 
@@ -26,11 +28,31 @@ pub fn compile(input: &TokenGroup) -> JITCache {
     let function_pointer_head: unsafe extern "sysv64" fn(mem: *const u8, offset: u64) -> u64 =
         unsafe { transmute(instruction_stream.binary_function_pointer::<u64, *const u8, u64>()) };
 
-    // RDI pointer to the head of brainfuck memory
+    _compile(input, &mut instruction_stream);
+
+    // copy offset into return value
+    instruction_stream.mov_Register64Bit_Register64Bit_r64_rm64(RAX, RSI);
+
+    // Caller should clean up stack. So just pop rip and jump the this address.
+    // ref data: https://en.wikipedia.org/wiki/X86_calling_conventions
+    // #List of x86 calling conventions #System V AMD64 ABI
+    instruction_stream.ret();
+
+    instruction_stream.finish();
+
+    JITCache {
+        function_pointer: function_pointer_head,
+        memory_map,
+    }
+}
+
+
+fn _compile(input: &TokenGroup, instruction_stream: &mut InstructionStream){
+// RDI pointer to the head of brainfuck memory
     // RSI = current offset in brainfuck memory
     // ref data: https://github.com/phip1611/rust-different-calling-conventions-example
     for t in input.tokens().into_iter() {
-        match t.token_type {
+        match &t.token_type {
             TokenType::PointerDecrement => instruction_stream.dec_Register64Bit(RSI),
             TokenType::PointerIncrement => instruction_stream.inc_Register64Bit(RSI),
             TokenType::Decrement => instruction_stream.sub_Any8BitMemory_Immediate8Bit(
@@ -85,23 +107,27 @@ pub fn compile(input: &TokenGroup) -> JITCache {
                     RAX,
                 );
             }
+            TokenType::SubGroup(sg) => {
+                let loop_start_label = instruction_stream.create_and_attach_label();
+                let loop_end_label = instruction_stream.create_label();
+
+                // If the byte at the data pointer != zero, start loop
+                instruction_stream.mov_Register8Bit_Any8BitMemory(
+                    AL,
+                    MemoryOperand::base_64_index_64(RDI, RSI).into(),
+                );
+                instruction_stream.cmp_Register8Bit_Immediate8Bit(AL, 0u8.into());
+                instruction_stream.jz_Label_1(loop_end_label);
+
+                // loop part
+                _compile(&sg, instruction_stream);
+
+                // jump to "["
+                instruction_stream.jmp_Label_1(loop_start_label);
+                instruction_stream.attach_label(loop_end_label);
+            }
             _ => (),
         }
-    }
-
-    // copy offset into return value
-    instruction_stream.mov_Register64Bit_Register64Bit_r64_rm64(RAX, RSI);
-
-    // Caller should clean up stack. So just pop rip and jump the this address.
-    // ref data: https://en.wikipedia.org/wiki/X86_calling_conventions
-    // #List of x86 calling conventions #System V AMD64 ABI
-    instruction_stream.ret();
-
-    instruction_stream.finish();
-
-    JITCache {
-        function_pointer: function_pointer_head,
-        memory_map,
     }
 }
 
@@ -157,4 +183,17 @@ pub fn test_jit_with_io2() {
     run(jit_cache, &mut memory);
 
     // manual input "A", should find a "B" as output
+}
+
+#[test]
+pub fn test_jit_with_loop() {
+    let input = "++[>+<-]";
+    let parse_result = parse(input).unwrap();
+
+    let mut memory = BrainfuckMemory::new();
+    let jit_cache = compile(&parse_result.parse_token_group);
+    run(jit_cache, &mut memory);
+    assert_eq!(2, memory.memory[1]);
+    assert_eq!(0, memory.memory[0]);
+    assert_eq!(0, memory.index);
 }

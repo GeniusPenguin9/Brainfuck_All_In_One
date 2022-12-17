@@ -11,5 +11,5 @@ fn main() {
     let contents = fs::read_to_string(&args[1]).expect("Should have been able to read the file");
 
     // TODO: support is_jit by user args
-    interpret(&contents, false);
+    interpret(&contents, true);
 }
