@@ -20,6 +20,7 @@ version = "0.1.0"
 dependencies = [
  "assembler",
  "brainfuck-analyzer",
+ "libc",
 ]
 
 [[package]]
