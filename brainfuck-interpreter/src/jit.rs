@@ -17,6 +17,7 @@ pub struct JITCache {
 }
 
 pub fn compile(input: &TokenGroup) -> JITCache {
+    // TODO: should support memory allocation increasement
     let mut memory_map =
         ExecutableAnonymousMemoryMap::new(4096, false, false).expect("Could not anonymously mmap");
 

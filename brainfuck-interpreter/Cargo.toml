@@ -9,3 +9,4 @@ edition = "2021"
 brainfuck-analyzer = {path = "../brainfuck-analyzer"}
 assembler = {path = "../../assembler/assembler"}
 libc = "0.2.138"
+clap = { version = "4.0.29", features = ["derive"] }
