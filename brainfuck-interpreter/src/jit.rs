@@ -1,17 +1,17 @@
 use std::mem::transmute;
 
+use crate::interpreter::BrainfuckMemory;
 use assembler::mnemonic_parameter_types::memory::{Memory, MemoryOperand};
 use assembler::mnemonic_parameter_types::registers::Register64Bit::*;
 use assembler::mnemonic_parameter_types::registers::Register8Bit::*;
 use assembler::ExecutableAnonymousMemoryMap::ExecutableAnonymousMemoryMap;
-use assembler::InstructionStreamHints::InstructionStreamHints;
 use assembler::InstructionStream::InstructionStream;
+use assembler::InstructionStreamHints::InstructionStreamHints;
 use brainfuck_analyzer::{parse, TokenGroup, TokenType};
 
-use crate::interpreter::BrainfuckMemory;
-
 pub struct JITCache {
-    function_pointer: unsafe extern "sysv64" fn(mem: *const u8, offset: u64) -> u64,
+    function_pointer:
+        unsafe extern "sysv64" fn(mem: *const u8, offset: u64, struct_ptr: *const u8) -> u64,
     #[allow(unused_variables, dead_code)]
     memory_map: ExecutableAnonymousMemoryMap,
 }
@@ -26,8 +26,13 @@ pub fn compile(input: &TokenGroup) -> JITCache {
     instruction_stream.emit_alignment(64);
 
     // use current position as fuction_pointer_head
-    let function_pointer_head: unsafe extern "sysv64" fn(mem: *const u8, offset: u64) -> u64 =
-        unsafe { transmute(instruction_stream.binary_function_pointer::<u64, *const u8, u64>()) };
+    let function_pointer_head: unsafe extern "sysv64" fn(
+        mem: *const u8,
+        offset: u64,
+        struct_ptr: *const u8,
+    ) -> u64 = unsafe {
+        transmute(instruction_stream.ternary_function_pointer::<u64, *const u8, u64, *const u8>())
+    };
 
     _compile(input, &mut instruction_stream);
 
@@ -47,15 +52,46 @@ pub fn compile(input: &TokenGroup) -> JITCache {
     }
 }
 
-
-fn _compile(input: &TokenGroup, instruction_stream: &mut InstructionStream){
-// RDI pointer to the head of brainfuck memory
+fn _compile(input: &TokenGroup, instruction_stream: &mut InstructionStream) {
+    // RDI pointer to the head of brainfuck memory(vec part)
     // RSI = current offset in brainfuck memory
+    // RDX = pointer to the head of BrainfuckMemory struct
     // ref data: https://github.com/phip1611/rust-different-calling-conventions-example
     for t in input.tokens().into_iter() {
         match &t.token_type {
             TokenType::PointerDecrement => instruction_stream.dec_Register64Bit(RSI),
-            TokenType::PointerIncrement => instruction_stream.inc_Register64Bit(RSI),
+            TokenType::PointerIncrement => {
+                // jump to rust function runtime_resize, rust function will resize runtime memory if needed
+                // push stack: RSI, RDX
+                // here we don't really push RDI, because the head of brainfuck memory(vec part) may change after resize. Always use fn return value as RDI.
+                instruction_stream.push_Register64Bit_r64(RSI);
+                instruction_stream.push_Register64Bit_r64(RDX);
+
+                // move runtime(RDX) to RDI(the first param of function runtime_resize)
+                instruction_stream.mov_Register64Bit_Register64Bit_r64_rm64(RDI, RDX);
+                // [NO CODE] move RSI to RSI
+
+                // call function
+                let fn_ptr: u64 = unsafe {
+                    transmute::<
+                        unsafe extern "sysv64" fn(
+                            runtime: &mut BrainfuckMemory,
+                            current_index: u8,
+                        ) -> *const u8,
+                        u64,
+                    >(runtime_resize)
+                };
+                instruction_stream.mov_Register64Bit_Immediate64Bit(RAX, fn_ptr.into());
+                instruction_stream.call_Register64Bit(RAX);
+
+                //pop stack: RSI, RDI
+                instruction_stream.pop_Register64Bit_r64(RDX);
+                instruction_stream.pop_Register64Bit_r64(RSI);
+                // here we don't really pop RDI. Always use fn return value as RDI.
+                instruction_stream.mov_Register64Bit_Register64Bit_r64_rm64(RDI, RAX);
+
+                instruction_stream.inc_Register64Bit(RSI);
+            }
             TokenType::Decrement => instruction_stream.sub_Any8BitMemory_Immediate8Bit(
                 MemoryOperand::base_64_index_64(RDI, RSI).into(),
                 1u8.into(),
@@ -65,9 +101,10 @@ fn _compile(input: &TokenGroup, instruction_stream: &mut InstructionStream){
                 1u8.into(),
             ),
             TokenType::Output => {
-                // push RDI, RSI
+                // push RDI, RSI, RDX
                 instruction_stream.push_Register64Bit_r64(RDI);
                 instruction_stream.push_Register64Bit_r64(RSI);
+                instruction_stream.push_Register64Bit_r64(RDX);
 
                 // move RDI+RSI value (the char for print) to RDI
                 // pub fn mov_Register64Bit_Any64BitMemory(&mut self, dist: Register64Bit, src: Any64BitMemory) // function name format <behavior>_<dist>_<src>
@@ -82,14 +119,16 @@ fn _compile(input: &TokenGroup, instruction_stream: &mut InstructionStream){
                 instruction_stream.mov_Register64Bit_Immediate64Bit(RAX, fn_ptr.into());
                 instruction_stream.call_Register64Bit(RAX);
 
-                //pop RSI,RDI
+                //pop RDX, RSI, RDI
+                instruction_stream.pop_Register64Bit_r64(RDX);
                 instruction_stream.pop_Register64Bit_r64(RSI);
                 instruction_stream.pop_Register64Bit_r64(RDI);
             }
             TokenType::Input => {
-                // push RDI, RSI
+                // push RDI, RSI, RDX
                 instruction_stream.push_Register64Bit_r64(RDI);
                 instruction_stream.push_Register64Bit_r64(RSI);
+                instruction_stream.push_Register64Bit_r64(RDX);
 
                 // call function, return value will be saved into RAX
                 // Integer return values up to 64 bits in size are stored in RAX, ref data: https://en.wikipedia.org/wiki/X86_calling_conventions
@@ -98,7 +137,8 @@ fn _compile(input: &TokenGroup, instruction_stream: &mut InstructionStream){
                 instruction_stream.mov_Register64Bit_Immediate64Bit(RAX, fn_ptr.into());
                 instruction_stream.call_Register64Bit(RAX);
 
-                //pop RSI,RDI
+                //pop RDX, RSI, RDI
+                instruction_stream.pop_Register64Bit_r64(RDX);
                 instruction_stream.pop_Register64Bit_r64(RSI);
                 instruction_stream.pop_Register64Bit_r64(RDI);
 
@@ -134,8 +174,13 @@ fn _compile(input: &TokenGroup, instruction_stream: &mut InstructionStream){
 
 pub fn run(jit_cache: JITCache, runtime: &mut BrainfuckMemory) {
     let new_index = unsafe {
-        let ptr = &runtime.memory[0] as *const u8;
-        (jit_cache.function_pointer)(ptr, runtime.index as u64)
+        let runtime_memory_vec_ptr = &runtime.memory[0] as *const u8;
+        let runtime_struct_ptr = transmute::<&mut BrainfuckMemory, *const u8>(runtime);
+        (jit_cache.function_pointer)(
+            runtime_memory_vec_ptr,
+            runtime.index as u64,
+            runtime_struct_ptr,
+        )
     };
     runtime.index = new_index as usize;
 }
@@ -147,6 +192,18 @@ unsafe extern "sysv64" fn input_char() -> u8 {
 unsafe extern "sysv64" fn output_char(c: u8) -> u8 {
     libc::putchar(c as i32);
     c
+}
+
+unsafe extern "sysv64" fn runtime_resize(
+    runtime: &mut BrainfuckMemory,
+    current_index: u8,
+) -> *const u8 {
+    if runtime.memory.len() - current_index as usize == 1 {
+        // may re-alloc new part of memory and copy the original data. should return memory head pointer
+        runtime.memory.resize(runtime.memory.len() * 2, 0);
+    }
+
+    &runtime.memory[0] as *const u8
 }
 
 #[test]
@@ -197,4 +254,20 @@ pub fn test_jit_with_loop() {
     assert_eq!(2, memory.memory[1]);
     assert_eq!(0, memory.memory[0]);
     assert_eq!(0, memory.index);
+}
+
+#[test]
+pub fn test_jit_memory_extension() {
+    let input = ">>>>++";
+    let parse_result = parse(input).unwrap();
+
+    let mut memory = BrainfuckMemory::new();
+    memory.memory = vec![0; 3];
+
+    let jit_cache = compile(&parse_result.parse_token_group);
+    run(jit_cache, &mut memory);
+
+    assert_eq!(6, memory.memory.len());
+    assert_eq!(4, memory.index);
+    assert_eq!(2, memory.memory[4]);
 }
