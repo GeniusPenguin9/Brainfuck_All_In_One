@@ -10,3 +10,10 @@ brainfuck-analyzer = {path = "../brainfuck-analyzer"}
 assembler = {path = "../../assembler/assembler"}
 libc = "0.2.138"
 clap = { version = "4.0.29", features = ["derive"] }
+
+[dev-dependencies]
+criterion = "0.4.0"
+
+[[bench]]
+name = "jit_benchmark"
+harness = false
