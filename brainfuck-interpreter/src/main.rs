@@ -1,7 +1,9 @@
+use crate::{autojit::interpret_auto_jit, jit::interpret_jit};
 use clap::Parser;
 use interpreter::interpret;
 use std::fs;
 
+mod autojit;
 mod interpreter;
 mod jit;
 
@@ -9,16 +11,28 @@ fn main() {
     let args = Args::parse();
 
     let contents = fs::read_to_string(args.file).expect("Should have been able to read the file");
-    interpret(&contents, args.aot);
+
+    match args.mode.as_str() {
+        "interpret" => {
+            interpret(&contents);
+        }
+        "jit" => {
+            interpret_jit(&contents);
+        }
+        "autojit" => {
+            interpret_auto_jit(&contents);
+        }
+        _ => panic!("Invalid mode value."),
+    }
 }
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// enable ahead of time, if true, use jit. Default = false.
-    #[arg(short, long, default_value_t = false)]
-    aot: bool,
+    // Valid value = interprete / jit / autojit. Default value = interprete.
+    #[arg(short, long, default_value_t = String::from("interpret"))]
+    mode: String,
 
     // brainfuck file path
     #[arg(short, long)]

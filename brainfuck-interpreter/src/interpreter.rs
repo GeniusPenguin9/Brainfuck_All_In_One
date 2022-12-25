@@ -2,11 +2,25 @@ use std::io::Read;
 
 use brainfuck_analyzer::{parse, Token, TokenType};
 
-use crate::jit::{compile, run};
+use crate::jit::IBrainfuckMemory;
 
 pub struct BrainfuckMemory {
     pub index: usize,
     pub memory: Vec<u8>,
+}
+
+impl IBrainfuckMemory for BrainfuckMemory {
+    fn get_memory_vec_ptr(&self) -> *const u8 {
+        &self.memory[0] as *const u8
+    }
+
+    fn get_index(&self) -> usize {
+        self.index
+    }
+
+    fn set_index(&mut self, new_index: usize) {
+        self.index = new_index;
+    }
 }
 
 impl BrainfuckMemory {
@@ -64,18 +78,13 @@ impl BrainfuckMemory {
     }
 }
 
-pub fn interpret(input: &str, is_jit: bool) {
+pub fn interpret(input: &str) {
     let parse_result = parse(input).unwrap();
-    if is_jit {
-        let mut memory = BrainfuckMemory::new();
-        let jit_cache = compile(&parse_result.parse_token_group);
-        run(jit_cache, &mut memory);
-    } else {
-        let iter = parse_result.parse_token_group.tokens().into_iter();
 
-        let mut memory = BrainfuckMemory::new();
-        for token in iter {
-            memory.interpret_token(token);
-        }
+    let iter = parse_result.parse_token_group.tokens().into_iter();
+
+    let mut memory = BrainfuckMemory::new();
+    for token in iter {
+        memory.interpret_token(token);
     }
 }

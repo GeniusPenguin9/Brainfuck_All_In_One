@@ -15,6 +15,13 @@ pub struct JITCache {
     #[allow(unused_variables, dead_code)]
     memory_map: ExecutableAnonymousMemoryMap,
 }
+unsafe impl Send for JITCache {}
+
+pub trait IBrainfuckMemory {
+    fn get_memory_vec_ptr(&self) -> *const u8;
+    fn get_index(&self) -> usize;
+    fn set_index(&mut self, new_index: usize);
+}
 
 pub fn compile(input: &TokenGroup) -> JITCache {
     // TODO: should support memory allocation increasement
@@ -172,17 +179,25 @@ fn _compile(input: &TokenGroup, instruction_stream: &mut InstructionStream) {
     }
 }
 
-pub fn run(jit_cache: JITCache, runtime: &mut BrainfuckMemory) {
+pub fn run<T: IBrainfuckMemory>(jit_cache: &JITCache, runtime: &mut T) {
     let new_index = unsafe {
-        let runtime_memory_vec_ptr = &runtime.memory[0] as *const u8;
-        let runtime_struct_ptr = transmute::<&mut BrainfuckMemory, *const u8>(runtime);
+        let runtime_memory_vec_ptr = runtime.get_memory_vec_ptr();
+        let runtime_struct_ptr = transmute::<&mut T, *const u8>(runtime);
         (jit_cache.function_pointer)(
             runtime_memory_vec_ptr,
-            runtime.index as u64,
+            runtime.get_index() as u64,
             runtime_struct_ptr,
         )
     };
-    runtime.index = new_index as usize;
+
+    runtime.set_index(new_index as usize);
+}
+
+pub fn interpret_jit(input: &str) {
+    let parse_result = parse(input).unwrap();
+    let mut memory = BrainfuckMemory::new();
+    let jit_cache = compile(&parse_result.parse_token_group);
+    run(&jit_cache, &mut memory);
 }
 
 unsafe extern "sysv64" fn input_char() -> u8 {
@@ -213,7 +228,7 @@ pub fn test_jit_simple() {
 
     let mut memory = BrainfuckMemory::new();
     let jit_cache = compile(&parse_result.parse_token_group);
-    run(jit_cache, &mut memory);
+    run(&jit_cache, &mut memory);
     assert_eq!(2, memory.memory[2]);
     assert_eq!(u8::MAX, memory.memory[1]);
     assert_eq!(1, memory.index);
@@ -226,7 +241,7 @@ pub fn test_jit_with_io() {
 
     let mut memory = BrainfuckMemory::new();
     let jit_cache = compile(&parse_result.parse_token_group);
-    run(jit_cache, &mut memory);
+    run(&jit_cache, &mut memory);
 
     // should find "!" in test terminal
 }
@@ -238,7 +253,7 @@ pub fn test_jit_with_io2() {
 
     let mut memory = BrainfuckMemory::new();
     let jit_cache = compile(&parse_result.parse_token_group);
-    run(jit_cache, &mut memory);
+    run(&jit_cache, &mut memory);
 
     // manual input "A", should find a "B" as output
 }
@@ -250,7 +265,7 @@ pub fn test_jit_with_loop() {
 
     let mut memory = BrainfuckMemory::new();
     let jit_cache = compile(&parse_result.parse_token_group);
-    run(jit_cache, &mut memory);
+    run(&jit_cache, &mut memory);
     assert_eq!(2, memory.memory[1]);
     assert_eq!(0, memory.memory[0]);
     assert_eq!(0, memory.index);
@@ -265,7 +280,7 @@ pub fn test_jit_memory_extension() {
     memory.memory = vec![0; 3];
 
     let jit_cache = compile(&parse_result.parse_token_group);
-    run(jit_cache, &mut memory);
+    run(&jit_cache, &mut memory);
 
     assert_eq!(6, memory.memory.len());
     assert_eq!(4, memory.index);
