@@ -112,7 +112,7 @@ impl AutoJITBrainfuckMemory {
                     if let Some(jit_cache) = &sub_group_cache_stack.last().unwrap().jit_cache {
                         run(jit_cache, self);
                     } else {
-                        if sub_group_cache_stack.last().unwrap().hit_count >= 3 {
+                        if sub_group_cache_stack.last().unwrap().hit_count == 3 {
                             m2j_tx.send((token.range, *sg.clone())).unwrap();
                         }
 
