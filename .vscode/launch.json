@@ -3,9 +3,10 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
-			"name": "(Windows) 附加",
-			"type": "cppvsdbg",
+			"type": "lldb",
 			"request": "attach",
+			"name": "Attach",
+			"program": "${workspaceFolder}/brainfuck-lsp/target/debug/brainfuck-lsp.exe"
 		},
 		{
 			"type": "extensionHost",
