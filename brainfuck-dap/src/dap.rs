@@ -1,8 +1,43 @@
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::BufRead;
 use std::sync::mpsc::{self, Receiver};
 use std::{io, thread, vec};
 
 type Message = String;
+
+/* ----------------- START: DAP Service for user ----------------- */
+
+pub struct DapService<'a, TUserData> {
+    dealer: Dealer<'a, TUserData>,
+}
+impl<'a, TUserData> DapService<'a, TUserData> {
+    pub fn new(user_data: TUserData) -> DapService<'a, TUserData> {
+        DapService {
+            dealer: Dealer::new(user_data),
+        }
+    }
+
+    pub fn register<TArguments: DeserializeOwned + 'a, TResult: Serialize + 'a>(
+        mut self,
+        fn_name: String,
+        fn_handler: Box<dyn Fn(&mut TUserData, TArguments) -> TResult>,
+    ) -> Self {
+        self.dealer.register(fn_name, fn_handler);
+        self
+    }
+
+    pub fn build(self) -> Self {
+        self
+    }
+
+    pub fn start(&mut self) {
+        todo!()
+    }
+}
+
+/* ----------------- END: DAP Service for user ----------------- */
 
 pub fn io_thread() {
     // io thread to dap thread
@@ -16,24 +51,24 @@ pub fn io_thread() {
 
     loop {
         stdin_cache.stdin_read_until("Content-Length: ");
-        println!("\n#########################\nGet Content-Length");
-        println!("\n#########################");
+
         let len = stdin_cache.stdin_read_until("\r\n\r\n");
         let len = len.parse::<usize>().unwrap();
-        println!("\n!!!!!!!!!!!!!!!!!!!!!!!!\nGet len = {}", len);
-        println!("\n!!!!!!!!!!!!!!!!!!!!!!!!");
+
         let request = stdin_cache.stdin_read_exact(len);
-        println!("\n==========================\nGet Request = {:?}", request);
-        println!("\n==========================");
+        i2d_tx.send(request).unwrap();
     }
 }
 
 pub fn dap_thread(i2d_rx: Receiver<Message>) {
-    let io_message = i2d_rx.recv().unwrap();
-    println!(
-        "\n#########################Received message: {:?}",
-        io_message
-    );
+    // let dealer = Dealer::new();
+    // // TODO: register function into dealer
+    // loop {
+    //     let io_request = i2d_rx.recv().unwrap();
+    //     let io_result = dealer.process_request(&io_request);
+
+    //     println!("{}", io_result);
+    // }
 }
 
 struct StdinCache {
@@ -125,5 +160,58 @@ impl StdinCache {
             .windows(target.len())
             .skip(self.start_position)
             .position(|window| window == target)
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct DAPRequest {
+    seq: usize,
+    command: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct DAPRequestWithArguments<TArguments> {
+    seq: usize,
+    command: String,
+    arguments: TArguments,
+}
+
+struct Dealer<'a, TUserData: 'a> {
+    function_map: HashMap<String, Box<dyn Fn(&mut TUserData, String) -> String + 'a>>,
+    user_data: TUserData,
+}
+
+impl<'a, TUserData> Dealer<'a, TUserData> {
+    pub fn new(user_data: TUserData) -> Dealer<'a, TUserData> {
+        Dealer {
+            function_map: HashMap::new(),
+            user_data,
+        }
+    }
+
+    pub fn register<TArguments: DeserializeOwned + 'a, TResult: Serialize + 'a>(
+        &mut self,
+        fn_name: String,
+        fn_handler: Box<dyn Fn(&mut TUserData, TArguments) -> TResult>,
+    ) {
+        let new_function = move |user_data: &mut TUserData, request_str: String| {
+            let request_with_arg: DAPRequestWithArguments<TArguments> =
+                serde_json::from_str(&request_str).unwrap();
+
+            let result = fn_handler(user_data, request_with_arg.arguments);
+            serde_json::to_string(&result).unwrap()
+        };
+
+        self.function_map.insert(fn_name, Box::new(new_function));
+    }
+
+    pub fn process_request(&mut self, io_request: &str) -> String {
+        let dap_request: DAPRequest = serde_json::from_str(io_request).unwrap();
+        let handler = self.function_map.get(&dap_request.command);
+        // TODO:
+        match handler {
+            Some(h) => h(&mut self.user_data, io_request.to_string()),
+            None => todo!(),
+        }
     }
 }
