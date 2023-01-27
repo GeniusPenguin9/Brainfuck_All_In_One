@@ -2,17 +2,18 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::BufRead;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::{io, thread, vec};
 
 type Message = String;
 
 /* ----------------- START: DAP Service for user ----------------- */
 
-pub struct DapService<'a, TUserData> {
+pub struct DapService<'a, TUserData: Send> {
     dealer: Dealer<'a, TUserData>,
 }
-impl<'a, TUserData> DapService<'a, TUserData> {
+
+impl<'a, TUserData: Send> DapService<'a, TUserData> {
     pub fn new(user_data: TUserData) -> DapService<'a, TUserData> {
         DapService {
             dealer: Dealer::new(user_data),
@@ -33,43 +34,42 @@ impl<'a, TUserData> DapService<'a, TUserData> {
     }
 
     pub fn start(&mut self) {
-        todo!()
+        // io thread to dap thread
+        let (i2d_tx, i2d_rx) = mpsc::channel();
+
+        thread::spawn(move || {
+            Self::io_thread(i2d_tx);
+        });
+
+        self.dap_thread(i2d_rx);
+    }
+
+    fn io_thread(i2d_tx: Sender<Message>) {
+        let mut stdin_cache = StdinCache::new();
+
+        loop {
+            stdin_cache.stdin_read_until("Content-Length: ");
+
+            let len = stdin_cache.stdin_read_until("\r\n\r\n");
+            let len = len.parse::<usize>().unwrap();
+
+            let request = stdin_cache.stdin_read_exact(len);
+            i2d_tx.send(request).unwrap();
+        }
+    }
+
+    fn dap_thread(&mut self, i2d_rx: Receiver<Message>) {
+        loop {
+            let io_request = i2d_rx.recv().unwrap();
+            let io_result = self.dealer.process_request(&io_request);
+
+            // TODO: print to stdout
+            todo!();
+        }
     }
 }
 
 /* ----------------- END: DAP Service for user ----------------- */
-
-pub fn io_thread() {
-    // io thread to dap thread
-    let (i2d_tx, i2d_rx) = mpsc::channel();
-
-    thread::spawn(move || {
-        dap_thread(i2d_rx);
-    });
-
-    let mut stdin_cache = StdinCache::new();
-
-    loop {
-        stdin_cache.stdin_read_until("Content-Length: ");
-
-        let len = stdin_cache.stdin_read_until("\r\n\r\n");
-        let len = len.parse::<usize>().unwrap();
-
-        let request = stdin_cache.stdin_read_exact(len);
-        i2d_tx.send(request).unwrap();
-    }
-}
-
-pub fn dap_thread(i2d_rx: Receiver<Message>) {
-    // let dealer = Dealer::new();
-    // // TODO: register function into dealer
-    // loop {
-    //     let io_request = i2d_rx.recv().unwrap();
-    //     let io_result = dealer.process_request(&io_request);
-
-    //     println!("{}", io_result);
-    // }
-}
 
 struct StdinCache {
     stdin_cache: Vec<u8>,
