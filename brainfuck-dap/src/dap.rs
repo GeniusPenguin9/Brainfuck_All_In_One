@@ -79,9 +79,8 @@ impl<'a, TUserData: Send> DapService<'a, TUserData> {
             let io_result = self.dealer.process_request(&io_request);
             print!("{}\r\n", io_result);
 
-            while let Some(event_rx) = &self.event_rx {
-                let event = event_rx.try_recv();
-                if let Ok(event) = event {
+            if let Some(event_rx) = &self.event_rx {
+                while let Ok(event) = event_rx.try_recv() {
                     print!("{}\r\n", event);
                 }
             }

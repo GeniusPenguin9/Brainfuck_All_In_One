@@ -72,7 +72,7 @@ fn main() {
 
 #[test]
 fn test_initialization_request() {
-    use std::io::Write;
+    use std::io::{Read, Write};
     use std::process::{Command, Stdio};
     use std::{thread, time};
 
