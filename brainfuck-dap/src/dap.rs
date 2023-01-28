@@ -11,12 +11,15 @@ type Message = String;
 
 pub struct DapService<'a, TUserData: Send> {
     dealer: Dealer<'a, TUserData>,
+    event_rx: Option<Receiver<Message>>,
 }
 
 impl<'a, TUserData: Send> DapService<'a, TUserData> {
+    #[allow(dead_code)]
     pub fn new(user_data: TUserData) -> DapService<'a, TUserData> {
         DapService {
             dealer: Dealer::new(user_data),
+            event_rx: None,
         }
     }
 
@@ -27,6 +30,18 @@ impl<'a, TUserData: Send> DapService<'a, TUserData> {
     ) -> Self {
         self.dealer.register(fn_name, fn_handler);
         self
+    }
+
+    pub fn new_with_poster<F>(init_fn: F) -> Self
+    where
+        F: FnOnce(EventPoster) -> TUserData,
+    {
+        let (event_tx, event_rx) = mpsc::channel();
+        let event_poster = EventPoster { event_tx };
+        DapService {
+            dealer: Dealer::new(init_fn(event_poster)),
+            event_rx: Some(event_rx),
+        }
     }
 
     pub fn build(self) -> Self {
@@ -49,11 +64,11 @@ impl<'a, TUserData: Send> DapService<'a, TUserData> {
 
         loop {
             stdin_cache.stdin_read_until("Content-Length: ");
-
             let len = stdin_cache.stdin_read_until("\r\n\r\n");
             let len = len.parse::<usize>().unwrap();
 
             let request = stdin_cache.stdin_read_exact(len);
+
             i2d_tx.send(request).unwrap();
         }
     }
@@ -62,14 +77,33 @@ impl<'a, TUserData: Send> DapService<'a, TUserData> {
         loop {
             let io_request = i2d_rx.recv().unwrap();
             let io_result = self.dealer.process_request(&io_request);
+            print!("{}\r\n", io_result);
 
-            // TODO: print to stdout
-            todo!();
+            while let Some(event_rx) = &self.event_rx {
+                let event = event_rx.try_recv();
+                if let Ok(event) = event {
+                    print!("{}\r\n", event);
+                }
+            }
         }
     }
 }
 
 /* ----------------- END: DAP Service for user ----------------- */
+pub struct EventPoster {
+    event_tx: Sender<Message>,
+}
+impl EventPoster {
+    #[allow(dead_code)]
+    pub fn send_event<T: Serialize>(&mut self, event: &T) {
+        let event_str = serde_json::to_string(event).unwrap();
+        print!("{}\r\n", event_str);
+    }
+    pub fn queue_event<T: Serialize>(&mut self, event: &T) {
+        let event_str = serde_json::to_string(event).unwrap();
+        self.event_tx.send(event_str).unwrap();
+    }
+}
 
 struct StdinCache {
     stdin_cache: Vec<u8>,
@@ -89,12 +123,6 @@ impl StdinCache {
 
     pub fn stdin_read_exact(&mut self, target_len: usize) -> String {
         loop {
-            let stdin = &mut io::stdin().lock();
-            let buffer = stdin.fill_buf().unwrap();
-            let l = buffer.len();
-            self.stdin_cache.append(&mut buffer.to_vec());
-            stdin.consume(l);
-
             if self.stdin_cache.len() - self.start_position >= target_len {
                 let result = String::from_utf8(
                     self.stdin_cache[self.start_position..self.start_position + target_len]
@@ -104,6 +132,12 @@ impl StdinCache {
                 self.start_position += target_len;
                 return result;
             }
+
+            let stdin = &mut io::stdin().lock();
+            let buffer = stdin.fill_buf().unwrap();
+            let l = buffer.len();
+            self.stdin_cache.append(&mut buffer.to_vec());
+            stdin.consume(l);
         }
     }
 
@@ -122,12 +156,6 @@ impl StdinCache {
         let target = target.as_bytes();
 
         loop {
-            let stdin = &mut io::stdin().lock();
-            let buffer = stdin.fill_buf().unwrap();
-            let l = buffer.len();
-            self.stdin_cache.append(&mut buffer.to_vec());
-            stdin.consume(l);
-
             // find target in stdin_cache
             match self.find_subsequence(target) {
                 Some(result_len) => {
@@ -143,6 +171,12 @@ impl StdinCache {
                 }
                 None => (),
             }
+
+            let stdin = &mut io::stdin().lock();
+            let buffer = stdin.fill_buf().unwrap();
+            let l = buffer.len();
+            self.stdin_cache.append(&mut buffer.to_vec());
+            stdin.consume(l);
         }
     }
 

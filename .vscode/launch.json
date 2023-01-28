@@ -4,6 +4,12 @@
 	"configurations": [
 		{
 			"type": "lldb",
+			"request": "attach",
+			"name": "Attach dap",
+			"program": "${workspaceFolder}/brainfuck-dap/target/debug/brainfuck-dap.exe"
+		},
+		{
+			"type": "lldb",
 			"request": "launch",
 			"name": "Launch dap",
 			"program": "${workspaceFolder}/brainfuck-dap/target/debug/brainfuck-dap.exe",
