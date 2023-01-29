@@ -11,18 +11,16 @@ impl UserData {
     fn initialize(
         &mut self,
         initialize_requst_args: InitializeRequestArguments,
-    ) -> InitializeResponse {
+    ) -> Result<Capabilities, String> {
         // TODO: record initialize_requst_args somewhere...
 
         // TODO: start interpreter
 
         self.event_poster.queue_event(&InitializeEvent::new());
 
-        InitializeResponse {
-            body: Some(Capabilities {
-                supports_single_thread_execution_requests: Some(true),
-            }),
-        }
+        Ok(Capabilities {
+            supports_single_thread_execution_requests: Some(true),
+        })
     }
 }
 
@@ -32,14 +30,7 @@ struct InitializeRequestArguments {
     adapter_id: String,
 }
 
-// TODO: include content-length and seq, type ...
-#[derive(Serialize)]
-struct InitializeResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    body: Option<Capabilities>,
-}
-
-// TODO: include content-length
+// TODO: include content-length for event and response~
 #[derive(Serialize)]
 struct InitializeEvent {
     #[serde(rename(serialize = "type"))]
@@ -98,5 +89,5 @@ fn test_initialization_request() {
     child.kill().unwrap();
 
     let actual = String::from_utf8(read_buf.to_vec()).unwrap();
-    assert!(actual.contains("{\"body\":{\"supportsSingleThreadExecutionRequests\":true}}\r\n{\"type\":\"event\",\"event\":\"initialized\"}\r\n"));
+    assert!(actual.contains("{\"type\":\"response\",\"request_seq\":153,\"success\":true,\"command\":\"initialize\",\"body\":{\"supportsSingleThreadExecutionRequests\":true}}\r\n{\"type\":\"event\",\"event\":\"initialized\"}"));
 }

@@ -23,10 +23,10 @@ impl<'a, TUserData: Send> DapService<'a, TUserData> {
         }
     }
 
-    pub fn register<TArguments: DeserializeOwned + 'a, TResult: Serialize + 'a>(
+    pub fn register<TArguments: DeserializeOwned + 'a, TResponseBody: Serialize + 'a>(
         mut self,
         fn_name: String,
-        fn_handler: Box<dyn Fn(&mut TUserData, TArguments) -> TResult>,
+        fn_handler: Box<dyn Fn(&mut TUserData, TArguments) -> Result<TResponseBody, String>>,
     ) -> Self {
         self.dealer.register(fn_name, fn_handler);
         self
@@ -209,6 +209,24 @@ struct DAPRequestWithArguments<TArguments> {
     arguments: TArguments,
 }
 
+#[derive(Serialize)]
+struct DAPResponseWithBody<TResponseBody> {
+    #[serde(rename(serialize = "type"))]
+    response_type: String,
+
+    request_seq: usize,
+
+    success: bool,
+
+    command: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body: Option<TResponseBody>,
+}
+
 struct Dealer<'a, TUserData: 'a> {
     function_map: HashMap<String, Box<dyn Fn(&mut TUserData, String) -> String + 'a>>,
     user_data: TUserData,
@@ -222,16 +240,33 @@ impl<'a, TUserData> Dealer<'a, TUserData> {
         }
     }
 
-    pub fn register<TArguments: DeserializeOwned + 'a, TResult: Serialize + 'a>(
+    pub fn register<TArguments: DeserializeOwned + 'a, TResponseBody: Serialize + 'a>(
         &mut self,
         fn_name: String,
-        fn_handler: Box<dyn Fn(&mut TUserData, TArguments) -> TResult>,
+        fn_handler: Box<dyn Fn(&mut TUserData, TArguments) -> Result<TResponseBody, String>>,
     ) {
         let new_function = move |user_data: &mut TUserData, request_str: String| {
             let request_with_arg: DAPRequestWithArguments<TArguments> =
                 serde_json::from_str(&request_str).unwrap();
 
-            let result = fn_handler(user_data, request_with_arg.arguments);
+            let result = match fn_handler(user_data, request_with_arg.arguments) {
+                Ok(success_body) => DAPResponseWithBody::<TResponseBody> {
+                    response_type: "response".to_string(),
+                    request_seq: request_with_arg.seq,
+                    success: true,
+                    command: request_with_arg.command,
+                    message: None,
+                    body: Some(success_body),
+                },
+                Err(err) => DAPResponseWithBody::<TResponseBody> {
+                    response_type: "response".to_string(),
+                    request_seq: request_with_arg.seq,
+                    success: false,
+                    command: request_with_arg.command,
+                    message: Some(err),
+                    body: None,
+                },
+            };
             serde_json::to_string(&result).unwrap()
         };
 
