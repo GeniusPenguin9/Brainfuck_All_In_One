@@ -77,11 +77,15 @@ impl<'a, TUserData: Send> DapService<'a, TUserData> {
         loop {
             let io_request = i2d_rx.recv().unwrap();
             let io_result = self.dealer.process_request(&io_request);
-            print!("{}\r\n", io_result);
+            print!(
+                "Content-Length: {}\r\n\r\n{}\r\n",
+                io_result.len(),
+                io_result
+            );
 
             if let Some(event_rx) = &self.event_rx {
                 while let Ok(event) = event_rx.try_recv() {
-                    print!("{}\r\n", event);
+                    print!("Content-Length: {}\r\n\r\n{}\r\n", event.len(), event);
                 }
             }
         }

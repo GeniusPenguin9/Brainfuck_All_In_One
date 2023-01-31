@@ -30,7 +30,6 @@ struct InitializeRequestArguments {
     adapter_id: String,
 }
 
-// TODO: include content-length for event and response~
 #[derive(Serialize)]
 struct InitializeEvent {
     #[serde(rename(serialize = "type"))]
@@ -84,10 +83,10 @@ fn test_initialization_request() {
     drop(child_stdin);
     thread::sleep(time::Duration::from_secs(5));
 
-    let mut read_buf: [u8; 200] = [0; 200];
+    let mut read_buf: [u8; 300] = [0; 300];
     child_stdout.read(&mut read_buf).unwrap();
     child.kill().unwrap();
 
     let actual = String::from_utf8(read_buf.to_vec()).unwrap();
-    assert!(actual.contains("{\"type\":\"response\",\"request_seq\":153,\"success\":true,\"command\":\"initialize\",\"body\":{\"supportsSingleThreadExecutionRequests\":true}}\r\n{\"type\":\"event\",\"event\":\"initialized\"}"));
+    assert!(actual.contains("Content-Length: 129\r\n\r\n{\"type\":\"response\",\"request_seq\":153,\"success\":true,\"command\":\"initialize\",\"body\":{\"supportsSingleThreadExecutionRequests\":true}}\r\nContent-Length: 38\r\n\r\n{\"type\":\"event\",\"event\":\"initialized\"}"));
 }
