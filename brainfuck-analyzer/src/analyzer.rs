@@ -53,7 +53,7 @@ impl Position {
 }
 
 /// A range in a text document expressed as (zero-based) start and end positions.
-/// A range is comparable to a selection in an editor. Therefore the end position is exclusive.
+/// A range is comparable to a selection in an editor. Therefore the end position is been excluded.
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Default)]
 pub struct Range {
     /// The range's start position.

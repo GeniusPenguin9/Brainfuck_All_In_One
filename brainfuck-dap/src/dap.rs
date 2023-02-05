@@ -1,3 +1,4 @@
+use core::time;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -75,19 +76,22 @@ impl<'a, TUserData: Send> DapService<'a, TUserData> {
 
     fn dap_thread(&mut self, i2d_rx: Receiver<Message>) {
         loop {
-            let io_request = i2d_rx.recv().unwrap();
-            let io_result = self.dealer.process_request(&io_request);
-            print!(
-                "Content-Length: {}\r\n\r\n{}\r\n",
-                io_result.len(),
-                io_result
-            );
+            if let Ok(io_request) = i2d_rx.try_recv() {
+                let io_result = self.dealer.process_request(&io_request);
+                print!(
+                    "Content-Length: {}\r\n\r\n{}\r\n",
+                    io_result.len(),
+                    io_result
+                );
+            }
 
             if let Some(event_rx) = &self.event_rx {
                 while let Ok(event) = event_rx.try_recv() {
                     print!("Content-Length: {}\r\n\r\n{}\r\n", event.len(), event);
                 }
             }
+
+            thread::sleep(time::Duration::from_millis(1));
         }
     }
 }

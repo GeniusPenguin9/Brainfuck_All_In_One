@@ -14,7 +14,7 @@ impl UserData {
     ) -> Result<Capabilities, String> {
         // TODO: record initialize_requst_args somewhere...
 
-        // TODO: start interpreter
+        // TODO: init BrainfuckInterpreter
 
         self.event_poster.queue_event(&InitializeEvent::new());
 
@@ -22,8 +22,31 @@ impl UserData {
             supports_single_thread_execution_requests: Some(true),
         })
     }
-}
 
+    fn set_breakpoints(
+        &mut self,
+        set_breakpoints_request_args: SetBreakpointsArguments,
+    ) -> Result<Vec<Breakpoint>, String> {
+        // TODO: get set_breakpoints_request_args.source.path and set_breakpoints_request_args.breakpoints
+
+        // TODO: send source & breakpoints to interpreter
+
+        // TODO: Returned is information about each breakpoint created by this request.
+        Ok(todo!())
+    }
+
+    fn breakpoint_callback(&mut self) {
+        self.event_poster.send_event(&StoppedEvent::new_breakpoint())
+    }
+
+    fn launch(){
+        // TODO:
+        // BrainfuckInterpreter.set_breakpoint_callback()
+        // BrainfuckInterpreter.run()
+        todo!()
+    }
+}
+/* ----------------- initialize ----------------- */
 #[derive(Deserialize)]
 struct InitializeRequestArguments {
     #[serde(rename(deserialize = "adapterID"))]
@@ -53,9 +76,115 @@ struct Capabilities {
     supports_single_thread_execution_requests: Option<bool>,
 }
 
+/* ----------------- set_breakpoints ----------------- */
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetBreakpointsArguments {
+    source: Source,
+    breakpoints: Option<Vec<SourceBreakpoint>>,
+    source_modified: Option<bool>,
+}
+
+/**
+ * Ignore fields:
+ * adapterData?: any;
+ * checksums?: Checksum[];
+ */
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Source {
+    name: Option<String>,
+    path: Option<String>,
+    source_reference: Option<usize>,
+    presentation_hint: Option<PresentationHintEnum>,
+    origin: Option<String>,
+    sources: Option<Vec<Source>>,
+}
+#[derive(Deserialize, Serialize)]
+enum PresentationHintEnum {
+    #[serde(rename(serialize = "normal"))]
+    Normal,
+    #[serde(rename(serialize = "emphasize"))]
+    Emphasize,
+    #[serde(rename(serialize = "deemphasize"))]
+    Deemphasize,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceBreakpoint {
+    line: usize,
+    column: Option<usize>,
+    condition: Option<String>,
+    hit_condition: Option<String>,
+    log_message: Option<String>,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Breakpoint {
+    id: usize,
+    verified: bool,
+    message: Option<String>,
+    source: Option<Source>,
+    line: Option<usize>,
+    column: Option<usize>,
+    end_line: Option<usize>,
+    end_column: Option<usize>,
+    instruction_reference: Option<String>,
+    offset: Option<usize>,
+}
+
+#[derive(Serialize)]
+struct StoppedEvent {
+    #[serde(rename(serialize = "type"))]
+    event_type: String,
+    event: String,
+    body: StoppedEventBody,
+}
+#[derive(Serialize)]
+struct StoppedEventBody {
+    reason: StoppedEventBodyEnum,
+}
+#[derive(Serialize)]
+enum StoppedEventBodyEnum {
+    #[serde(rename(serialize = "step"))]
+    Step,
+    #[serde(rename(serialize = "breakpoint"))]
+    Breakpoint,
+    #[serde(rename(serialize = "exception"))]
+    Exception,
+    #[serde(rename(serialize = "pause"))]
+    Pause,
+    #[serde(rename(serialize = "entry"))]
+    Entry,
+    #[serde(rename(serialize = "goto"))]
+    GoTo,
+    #[serde(rename(serialize = "function breakpoint"))]
+    FunctionBreakpoint,
+    #[serde(rename(serialize = "data breakpoint"))]
+    DataBreakpoint,
+    #[serde(rename(serialize = "instruction breakpoint"))]
+    InstructionBreakpoint,
+}
+
+impl StoppedEvent {
+    fn new_breakpoint() -> Self {
+        StoppedEvent {
+            event_type: "event".to_string(),
+            event: "stopped".to_string(),
+            body: StoppedEventBody {
+                reason: StoppedEventBodyEnum::Breakpoint,
+            },
+        }
+    }
+}
+
 fn main() {
     let mut dap_service = DapService::new_with_poster(|event_poster| UserData { event_poster })
         .register("initialize".to_string(), Box::new(UserData::initialize))
+        .register(
+            "setBreakpoints".to_string(),
+            Box::new(UserData::set_breakpoints),
+        )
         .build();
     dap_service.start();
 }

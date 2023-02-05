@@ -88,3 +88,22 @@ pub fn interpret(input: &str) {
         memory.interpret_token(token);
     }
 }
+
+pub struct BrainfuckInterpreter {}
+
+impl BrainfuckInterpreter {
+    pub fn set_breakpoint_callback(&mut self) {
+        // TODO: register callback function
+        todo!()
+    }
+
+    pub fn set_breakpoints(&mut self) {
+        // TODO: clear breakpoints and insert all received
+        todo!()
+    }
+
+    pub fn run(&mut self, breakpoint: bool) {
+        // TODO:
+        todo!()
+    }
+}

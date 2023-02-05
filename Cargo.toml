@@ -1,0 +1,8 @@
+[workspace]
+
+members = [
+    "brainfuck-analyzer",
+	"brainfuck-dap",
+	"brainfuck-interpreter",
+	"brainfuck-lsp",
+]

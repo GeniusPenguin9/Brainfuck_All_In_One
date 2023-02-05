@@ -265,16 +265,21 @@ fn n_tab(tab_number: usize) -> String {
 #[test]
 fn test_should_success() {
     let actual = format_string(">[>[<,]]").unwrap();
-    print!("Actual value:\n{}", actual.format_result);
+    println!("Actual value:\n{}", actual.format_result);
+    println!("Range after format: {:?}", actual.range);
     assert_eq!(
         ">\n[\n    >\n    [\n        <\n        ,\n    ]\n]",
         actual.format_result
     );
+    assert_eq!(0, actual.range.start.line);
+    assert_eq!(0, actual.range.start.character);
+    assert_eq!(0, actual.range.end.line);
+    assert_eq!(8, actual.range.end.character);
 }
 
 #[test]
 fn test_format_pretty_string() {
     let actual = format_pretty_string(">[>>+]").unwrap();
-    print!("Actual value:\n{}", actual.format_result);
+    println!("Actual value:\n{}", actual.format_result);
     assert_eq!(">\n[\n    >>+\n]\n", actual.format_result);
 }
