@@ -89,20 +89,33 @@ pub fn interpret(input: &str) {
     }
 }
 
-pub struct BrainfuckInterpreter {}
+pub struct BrainfuckInterpreter {
+    breakpoint_lines: Vec<usize>,
+    breakpoint_callback: Option<Box<dyn Fn() + Send>>,
+}
 
 impl BrainfuckInterpreter {
-    pub fn set_breakpoint_callback(&mut self) {
-        // TODO: register callback function
-        todo!()
+    pub fn new() -> Self {
+        BrainfuckInterpreter {
+            breakpoint_lines: Vec::new(),
+            breakpoint_callback: None,
+        }
     }
 
-    pub fn set_breakpoints(&mut self) {
-        // TODO: clear breakpoints and insert all received
-        todo!()
+    pub fn set_breakpoint_callback(&mut self, fn_handler: Box<dyn Fn() + Send>) {
+        self.breakpoint_callback = Some(fn_handler);
     }
 
-    pub fn run(&mut self, breakpoint: bool) {
+    pub fn set_breakpoints(&mut self, breakpoint_lines: Vec<usize>) {
+        self.breakpoint_lines = breakpoint_lines;
+    }
+
+    #[allow(dead_code)]
+    pub fn add_breakpoints(&mut self, breakpoint_lines: &mut Vec<usize>) {
+        self.breakpoint_lines.append(breakpoint_lines);
+    }
+
+    pub fn launch(&mut self, source_path: String, debug_mode: bool) {
         // TODO:
         todo!()
     }

@@ -1,21 +1,18 @@
+use brainfuck_interpreter::BrainfuckInterpreter;
 use dap::{DapService, EventPoster};
 use serde::{Deserialize, Serialize};
-
 mod dap;
 
 struct UserData {
     event_poster: EventPoster,
+    brainfuck_interpreter: BrainfuckInterpreter,
 }
 
 impl UserData {
     fn initialize(
         &mut self,
-        initialize_requst_args: InitializeRequestArguments,
+        _initialize_requst_args: InitializeRequestArguments,
     ) -> Result<Capabilities, String> {
-        // TODO: record initialize_requst_args somewhere...
-
-        // TODO: init BrainfuckInterpreter
-
         self.event_poster.queue_event(&InitializeEvent::new());
 
         Ok(Capabilities {
@@ -27,23 +24,28 @@ impl UserData {
         &mut self,
         set_breakpoints_request_args: SetBreakpointsArguments,
     ) -> Result<Vec<Breakpoint>, String> {
-        // TODO: get set_breakpoints_request_args.source.path and set_breakpoints_request_args.breakpoints
+        let breakpoint_lines = match set_breakpoints_request_args.breakpoints {
+            Some(source_breakpoint_vec) => source_breakpoint_vec.iter().map(|b| b.line).collect(),
+            None => Vec::new(),
+        };
+        let breakpoint_len = breakpoint_lines.len();
 
-        // TODO: send source & breakpoints to interpreter
+        self.brainfuck_interpreter.set_breakpoints(breakpoint_lines);
 
-        // TODO: Returned is information about each breakpoint created by this request.
-        Ok(todo!())
+        Ok(vec![Breakpoint { verified: true }; breakpoint_len])
     }
 
-    fn breakpoint_callback(&mut self) {
-        self.event_poster.send_event(&StoppedEvent::new_breakpoint())
-    }
-
-    fn launch(){
-        // TODO:
-        // BrainfuckInterpreter.set_breakpoint_callback()
-        // BrainfuckInterpreter.run()
-        todo!()
+    fn launch(&mut self, launch_request_args: LaunchRequestArguments) {
+        let event_poster = self.event_poster.clone();
+        let breakpoint_callback = move || {
+            event_poster.send_event(&StoppedEvent::new_breakpoint());
+        };
+        self.brainfuck_interpreter
+            .set_breakpoint_callback(Box::new(breakpoint_callback));
+        self.brainfuck_interpreter.launch(
+            launch_request_args.source.path.unwrap(),
+            launch_request_args.debug_mode,
+        );
     }
 }
 /* ----------------- initialize ----------------- */
@@ -118,19 +120,10 @@ struct SourceBreakpoint {
     hit_condition: Option<String>,
     log_message: Option<String>,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct Breakpoint {
-    id: usize,
     verified: bool,
-    message: Option<String>,
-    source: Option<Source>,
-    line: Option<usize>,
-    column: Option<usize>,
-    end_line: Option<usize>,
-    end_column: Option<usize>,
-    instruction_reference: Option<String>,
-    offset: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -178,16 +171,31 @@ impl StoppedEvent {
     }
 }
 
+/* ----------------- launch ----------------- */
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LaunchRequestArguments {
+    debug_mode: bool,
+    source: Source,
+}
+
+/* ----------------- main ----------------- */
+
 fn main() {
-    let mut dap_service = DapService::new_with_poster(|event_poster| UserData { event_poster })
-        .register("initialize".to_string(), Box::new(UserData::initialize))
-        .register(
-            "setBreakpoints".to_string(),
-            Box::new(UserData::set_breakpoints),
-        )
-        .build();
+    let mut dap_service = DapService::new_with_poster(|event_poster| UserData {
+        event_poster,
+        brainfuck_interpreter: BrainfuckInterpreter::new(),
+    })
+    .register("initialize".to_string(), Box::new(UserData::initialize))
+    .register(
+        "setBreakpoints".to_string(),
+        Box::new(UserData::set_breakpoints),
+    )
+    .build();
     dap_service.start();
 }
+
+/* ----------------- test ----------------- */
 
 #[test]
 fn test_initialization_request() {

@@ -85,6 +85,7 @@ name = "brainfuck-dap"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",
+ "brainfuck-interpreter",
  "serde",
  "serde_json",
 ]

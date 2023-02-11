@@ -97,12 +97,13 @@ impl<'a, TUserData: Send> DapService<'a, TUserData> {
 }
 
 /* ----------------- END: DAP Service for user ----------------- */
+#[derive(Clone)]
 pub struct EventPoster {
     event_tx: Sender<Message>,
 }
 impl EventPoster {
     #[allow(dead_code)]
-    pub fn send_event<T: Serialize>(&mut self, event: &T) {
+    pub fn send_event<T: Serialize>(& self, event: &T) {
         let event_str = serde_json::to_string(event).unwrap();
         print!("{}\r\n", event_str);
     }
