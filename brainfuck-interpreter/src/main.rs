@@ -1,6 +1,6 @@
 use crate::{autojit::interpret_auto_jit, jit::interpret_jit};
+use brainfuck_interpreter::BrainfuckInterpreter;
 use clap::Parser;
-use interpreter::interpret;
 use std::fs;
 
 mod autojit;
@@ -14,7 +14,8 @@ fn main() {
 
     match args.mode.as_str() {
         "interpret" => {
-            interpret(&contents);
+            let mut brainfuck_interpreter = BrainfuckInterpreter::new(contents, false);
+            brainfuck_interpreter.launch();
         }
         "jit" => {
             interpret_jit(&contents);

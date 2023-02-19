@@ -23,6 +23,7 @@ pub enum TokenType {
     LoopEnd,
     SubGroup(Box<TokenGroup>),
     Comment(String),
+    Breakpoint,
 }
 
 /// Position in a text document expressed as zero-based line and character offset.
@@ -110,6 +111,10 @@ impl<'a> CharsWithPosition<'a> {
 impl TokenGroup {
     pub fn tokens(&self) -> &Vec<Token> {
         &self.token_group
+    }
+
+    pub fn tokens_mut(&mut self) -> &mut Vec<Token> {
+        &mut self.token_group
     }
 }
 

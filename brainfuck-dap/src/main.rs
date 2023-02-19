@@ -1,11 +1,19 @@
-use brainfuck_interpreter::BrainfuckInterpreter;
+use std::{sync::{Arc, Mutex}, fs};
+
+use brainfuck_interpreter::{BrainfuckInterpreter, StoppedReasonEnum};
 use dap::{DapService, EventPoster};
 use serde::{Deserialize, Serialize};
 mod dap;
 
 struct UserData {
     event_poster: EventPoster,
-    brainfuck_interpreter: BrainfuckInterpreter,
+    runtime: Arc<Mutex<RunningState>>,
+    breakpoint_lines: Vec<usize>,
+}
+
+enum RunningState {
+    Idle,
+    Running(BrainfuckInterpreter),
 }
 
 impl UserData {
@@ -29,23 +37,41 @@ impl UserData {
             None => Vec::new(),
         };
         let breakpoint_len = breakpoint_lines.len();
-
-        self.brainfuck_interpreter.set_breakpoints(breakpoint_lines);
-
+        self.breakpoint_lines = breakpoint_lines;
         Ok(vec![Breakpoint { verified: true }; breakpoint_len])
     }
 
     fn launch(&mut self, launch_request_args: LaunchRequestArguments) {
         let event_poster = self.event_poster.clone();
-        let breakpoint_callback = move || {
-            event_poster.send_event(&StoppedEvent::new_breakpoint());
+        let callback_runtime = self.runtime.clone();
+        let breakpoint_callback = move |reason: StoppedReasonEnum| match reason {
+            StoppedReasonEnum::Breakpoint => event_poster.send_event(
+                &Event::<StoppedEventBody>::new(StoppedEventBodyEnum::Breakpoint),
+            ),
+            StoppedReasonEnum::Complete => {
+                if let Ok(mut runtime_lock) = callback_runtime.lock() {
+                    *runtime_lock = RunningState::Idle;
+                };
+                event_poster.send_event(&Event::<ExitedEventBody>::new(0));
+            }
         };
-        self.brainfuck_interpreter
-            .set_breakpoint_callback(Box::new(breakpoint_callback));
-        self.brainfuck_interpreter.launch(
-            launch_request_args.source.path.unwrap(),
-            launch_request_args.debug_mode,
-        );
+
+        if let Ok(mut current_runtime_lock) = self.runtime.lock() {
+            match *current_runtime_lock {
+                RunningState::Idle => {
+                    let source_content =  fs::read_to_string(launch_request_args.source.path.unwrap())
+                    .expect("Should have been able to read the file");
+                    let mut brainfuck_interpreter =
+                        BrainfuckInterpreter::new(source_content, true);
+                    brainfuck_interpreter.set_breakpoint_callback(Box::new(breakpoint_callback));
+                    brainfuck_interpreter.set_breakpoints(&self.breakpoint_lines);
+                    brainfuck_interpreter.launch();
+
+                    *current_runtime_lock = RunningState::Running(brainfuck_interpreter);
+                }
+                RunningState::Running(_) => todo!(), //panic??
+            }
+        }
     }
 }
 /* ----------------- initialize ----------------- */
@@ -127,11 +153,11 @@ struct Breakpoint {
 }
 
 #[derive(Serialize)]
-struct StoppedEvent {
+struct Event<T> {
     #[serde(rename(serialize = "type"))]
     event_type: String,
     event: String,
-    body: StoppedEventBody,
+    body: T,
 }
 #[derive(Serialize)]
 struct StoppedEventBody {
@@ -158,15 +184,28 @@ enum StoppedEventBodyEnum {
     #[serde(rename(serialize = "instruction breakpoint"))]
     InstructionBreakpoint,
 }
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExitedEventBody {
+    exit_code: i32,
+}
 
-impl StoppedEvent {
-    fn new_breakpoint() -> Self {
-        StoppedEvent {
+impl Event<StoppedEventBody> {
+    fn new(reason: StoppedEventBodyEnum) -> Event<StoppedEventBody> {
+        Event {
             event_type: "event".to_string(),
             event: "stopped".to_string(),
-            body: StoppedEventBody {
-                reason: StoppedEventBodyEnum::Breakpoint,
-            },
+            body: StoppedEventBody { reason },
+        }
+    }
+}
+
+impl Event<ExitedEventBody> {
+    fn new(exit_code: i32) -> Event<ExitedEventBody> {
+        Event {
+            event_type: "event".to_string(),
+            event: "exited".to_string(),
+            body: ExitedEventBody { exit_code },
         }
     }
 }
@@ -175,7 +214,6 @@ impl StoppedEvent {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LaunchRequestArguments {
-    debug_mode: bool,
     source: Source,
 }
 
@@ -184,7 +222,8 @@ struct LaunchRequestArguments {
 fn main() {
     let mut dap_service = DapService::new_with_poster(|event_poster| UserData {
         event_poster,
-        brainfuck_interpreter: BrainfuckInterpreter::new(),
+        runtime: Arc::new(Mutex::new(RunningState::Idle)),
+        breakpoint_lines: vec![],
     })
     .register("initialize".to_string(), Box::new(UserData::initialize))
     .register(
