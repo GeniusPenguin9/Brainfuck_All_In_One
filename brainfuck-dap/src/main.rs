@@ -5,18 +5,18 @@ use dap::{DapService, EventPoster};
 use serde::{Deserialize, Serialize};
 mod dap;
 
-struct UserData {
+struct UserData<'a> {
     event_poster: EventPoster,
-    runtime: Arc<Mutex<RunningState>>,
+    runtime: Arc<Mutex<RunningState<'a>>>,
     breakpoint_lines: Vec<usize>,
 }
 
-enum RunningState {
+enum RunningState<'a> {
     Idle,
-    Running(BrainfuckInterpreter),
+    Running(BrainfuckInterpreter<'a>),
 }
 
-impl UserData {
+impl<'a> UserData<'a> {
     fn initialize(
         &mut self,
         _initialize_requst_args: InitializeRequestArguments,

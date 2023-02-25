@@ -32,14 +32,14 @@ impl BrainfuckMemory {
     }
 }
 
-pub struct BrainfuckInterpreter {
+pub struct BrainfuckInterpreter<'a> {
     source_content: String,
     debug_mode: bool,
     breakpoint_lines: Vec<usize>,
-    breakpoint_callback: Option<Box<dyn Fn(StoppedReasonEnum) + Send>>,
+    breakpoint_callback: Option<Box<dyn FnMut(StoppedReasonEnum) + Send + 'a>>,
 }
 
-impl BrainfuckInterpreter {
+impl<'a> BrainfuckInterpreter<'a> {
     pub fn new(source_content: String, debug_mode: bool) -> Self {
         BrainfuckInterpreter {
             source_content,
@@ -49,7 +49,10 @@ impl BrainfuckInterpreter {
         }
     }
 
-    pub fn set_breakpoint_callback(&mut self, fn_handler: Box<dyn Fn(StoppedReasonEnum) + Send>) {
+    pub fn set_breakpoint_callback(
+        &mut self,
+        fn_handler: Box<dyn FnMut(StoppedReasonEnum) + Send + 'a>,
+    ) {
         self.breakpoint_callback = Some(fn_handler);
     }
 
@@ -62,7 +65,7 @@ impl BrainfuckInterpreter {
         self.breakpoint_lines.append(breakpoint_lines);
     }
 
-    pub fn interpret_token(&self, brainfuck_memory: &mut BrainfuckMemory, token: &Token) {
+    pub fn interpret_token(&mut self, brainfuck_memory: &mut BrainfuckMemory, token: &Token) {
         match &token.token_type {
             TokenType::PointerIncrement => {
                 if brainfuck_memory.memory.len() - brainfuck_memory.index == 1 {
@@ -108,7 +111,7 @@ impl BrainfuckInterpreter {
                 }
             }
             TokenType::Breakpoint => {
-                if let Some(callback) = &self.breakpoint_callback {
+                if let Some(callback) = &mut self.breakpoint_callback {
                     (callback)(StoppedReasonEnum::Breakpoint);
                 }
             }
@@ -175,18 +178,19 @@ pub enum StoppedReasonEnum {
 #[test]
 pub fn test_breakpoint() {
     use std::fs;
-    
+    let mut callback_hit = 0;
     let source_content =  fs::read_to_string("C:/Users/cauli/source/repos/rust/Brainfuck_All_In_One/brainfuck-interpreter/benches/jit_benchmark_test_calculation.bf".to_string())
                     .expect("Should have been able to read the file");
     let mut brainfuck_interpreter = BrainfuckInterpreter::new(source_content, true);
-    let breakpoint_lines: Vec<usize> = vec![0];
+    let breakpoint_lines: Vec<usize> = vec![0, 6];
     brainfuck_interpreter.set_breakpoints(&breakpoint_lines);
-    // let mut callback_hit = 0;
+
     let callback = |reason: StoppedReasonEnum| {
-        println!("Reason:{:?}", reason);
+        callback_hit += 1;
     };
     brainfuck_interpreter.set_breakpoint_callback(Box::new(callback));
     brainfuck_interpreter.launch();
-    // assert_eq!(2, callback_hit);
-    // TODO: add assert
+
+    drop(brainfuck_interpreter);
+    assert_eq!(1 + 255 * 255 * 255, callback_hit);
 }
