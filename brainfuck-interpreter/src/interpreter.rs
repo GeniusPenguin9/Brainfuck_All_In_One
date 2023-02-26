@@ -1,5 +1,6 @@
 use brainfuck_analyzer::{parse, Position, Range, Token, TokenType};
-
+use generator::Generator;
+use generator::{done, Gn, Scope};
 use std::io::Read;
 
 use crate::jit::IBrainfuckMemory;
@@ -37,6 +38,7 @@ pub struct BrainfuckInterpreter<'a> {
     debug_mode: bool,
     breakpoint_lines: Vec<usize>,
     breakpoint_callback: Option<Box<dyn FnMut(StoppedReasonEnum) + Send + 'a>>,
+    generator: Option<Generator<'a, (), StoppedReasonEnum>>,
 }
 
 impl<'a> BrainfuckInterpreter<'a> {
@@ -46,6 +48,7 @@ impl<'a> BrainfuckInterpreter<'a> {
             debug_mode,
             breakpoint_lines: Vec::new(),
             breakpoint_callback: None,
+            generator: None,
         }
     }
 
@@ -65,7 +68,12 @@ impl<'a> BrainfuckInterpreter<'a> {
         self.breakpoint_lines.append(breakpoint_lines);
     }
 
-    pub fn interpret_token(&mut self, brainfuck_memory: &mut BrainfuckMemory, token: &Token) {
+    pub fn interpret_token(
+        brainfuck_memory: &mut BrainfuckMemory,
+        token: &Token,
+        scope: &mut Scope<(), StoppedReasonEnum>,
+        debug_mode: bool,
+    ) {
         match &token.token_type {
             TokenType::PointerIncrement => {
                 if brainfuck_memory.memory.len() - brainfuck_memory.index == 1 {
@@ -74,18 +82,27 @@ impl<'a> BrainfuckInterpreter<'a> {
                         .resize(brainfuck_memory.memory.len() * 2, 0);
                 }
                 brainfuck_memory.index += 1;
+                if debug_mode {
+                    scope.yield_(StoppedReasonEnum::Step);
+                }
             }
             TokenType::PointerDecrement => {
                 if brainfuck_memory.index == 0 {
                     panic!("Cannot decrease pointer when pointer index = 0.");
                 }
                 brainfuck_memory.index -= 1;
+                if debug_mode {
+                    scope.yield_(StoppedReasonEnum::Step);
+                }
             }
             TokenType::Increment => {
                 if brainfuck_memory.memory[brainfuck_memory.index] == u8::MAX {
                     brainfuck_memory.memory[brainfuck_memory.index] = u8::MIN;
                 } else {
                     brainfuck_memory.memory[brainfuck_memory.index] += 1;
+                }
+                if debug_mode {
+                    scope.yield_(StoppedReasonEnum::Step);
                 }
             }
             TokenType::Decrement => {
@@ -94,25 +111,34 @@ impl<'a> BrainfuckInterpreter<'a> {
                 } else {
                     brainfuck_memory.memory[brainfuck_memory.index] -= 1;
                 }
+                if debug_mode {
+                    scope.yield_(StoppedReasonEnum::Step);
+                }
             }
             TokenType::Output => {
                 let c: char = brainfuck_memory.memory[brainfuck_memory.index].into();
                 print!("{}", c);
+                if debug_mode {
+                    scope.yield_(StoppedReasonEnum::Step);
+                }
             }
             TokenType::Input => {
                 brainfuck_memory.memory[brainfuck_memory.index] =
                     std::io::stdin().bytes().next().unwrap().unwrap();
+                if debug_mode {
+                    scope.yield_(StoppedReasonEnum::Step);
+                }
             }
             TokenType::SubGroup(sg) => {
                 while brainfuck_memory.memory[brainfuck_memory.index] != 0 {
                     for token in sg.tokens().into_iter() {
-                        self.interpret_token(brainfuck_memory, token);
+                        Self::interpret_token(brainfuck_memory, token, scope, debug_mode);
                     }
                 }
             }
             TokenType::Breakpoint => {
-                if let Some(callback) = &mut self.breakpoint_callback {
-                    (callback)(StoppedReasonEnum::Breakpoint);
+                if debug_mode {
+                    scope.yield_(StoppedReasonEnum::Breakpoint);
                 }
             }
             _ => (),
@@ -161,22 +187,84 @@ impl<'a> BrainfuckInterpreter<'a> {
         let vec_token = parse_result.parse_token_group.tokens_mut();
         let mut breakpoint_lines = self.breakpoint_lines.clone();
         Self::_insert_breakpoints(vec_token, &mut breakpoint_lines);
+        drop(vec_token);
 
         let mut memory = BrainfuckMemory::new();
-        for token in vec_token.into_iter() {
-            self.interpret_token(&mut memory, token);
+        let debug_mode = self.debug_mode;
+        self.generator = Some(Gn::new_scoped(
+            move |mut scope: Scope<(), StoppedReasonEnum>| {
+                for token in parse_result.parse_token_group.tokens_mut().into_iter() {
+                    Self::interpret_token(&mut memory, token, &mut scope, debug_mode);
+                }
+                scope.yield_(StoppedReasonEnum::Complete);
+                done!();
+            },
+        ));
+
+        self.run();
+    }
+
+    // run means user click "continue" and only stopped when breakpoint/complete
+    pub fn run(&mut self) {
+        while let Some(reason) = self.generator.as_mut().unwrap().next() {
+            match reason {
+                StoppedReasonEnum::Breakpoint | StoppedReasonEnum::Complete => {
+                    if let Some(callback) = &mut self.breakpoint_callback {
+                        (callback)(reason);
+                    };
+                    break;
+                }
+                _ => (),
+            }
+        }
+    }
+
+    // next means user want to run only one step
+    pub fn next(&mut self) {
+        while let Some(reason) = self.generator.as_mut().unwrap().next() {
+            match reason {
+                StoppedReasonEnum::Step | StoppedReasonEnum::Complete => {
+                    if let Some(callback) = &mut self.breakpoint_callback {
+                        (callback)(reason);
+                    };
+                    break;
+                }
+                _ => (),
+            }
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum StoppedReasonEnum {
     Breakpoint,
+    Step,
     Complete,
 }
 
 #[test]
-pub fn test_breakpoint() {
+pub fn test_breakpoint_debug_mode() {
+    use std::fs;
+    let mut callback_hit = 0;
+    let source_content =  fs::read_to_string("C:/Users/cauli/source/repos/rust/Brainfuck_All_In_One/brainfuck-interpreter/benches/jit_benchmark_test_calculation.bf".to_string())
+                    .expect("Should have been able to read the file");
+    let mut brainfuck_interpreter = BrainfuckInterpreter::new(source_content, true);
+    let breakpoint_lines: Vec<usize> = vec![0, 6];
+    brainfuck_interpreter.set_breakpoints(&breakpoint_lines);
+
+    let callback = |reason: StoppedReasonEnum| {
+        assert_eq!(StoppedReasonEnum::Breakpoint, reason);
+        callback_hit += 1;
+    };
+    brainfuck_interpreter.set_breakpoint_callback(Box::new(callback));
+    brainfuck_interpreter.launch();
+
+    drop(brainfuck_interpreter);
+    assert_eq!(1, callback_hit);
+}
+
+#[test]
+pub fn test_breakpoint_continue_debug_mode() {
     use std::fs;
     let mut callback_hit = 0;
     let source_content =  fs::read_to_string("C:/Users/cauli/source/repos/rust/Brainfuck_All_In_One/brainfuck-interpreter/benches/jit_benchmark_test_calculation.bf".to_string())
@@ -190,7 +278,35 @@ pub fn test_breakpoint() {
     };
     brainfuck_interpreter.set_breakpoint_callback(Box::new(callback));
     brainfuck_interpreter.launch();
+    for _ in 0..(255 * 255 * 255 + 1) {
+        brainfuck_interpreter.run();
+    }
 
     drop(brainfuck_interpreter);
-    assert_eq!(1 + 255 * 255 * 255, callback_hit);
+
+    // line 0, breakpoint 1 time
+    // line 6, breakpoint 255 * 255 * 255 times
+    // complete 1 time
+    assert_eq!(1 + 255 * 255 * 255 + 1, callback_hit);
+}
+
+#[test]
+pub fn test_breakpoint_disable_debug_mode() {
+    use std::fs;
+    let mut callback_hit = 0;
+    let source_content =  fs::read_to_string("C:/Users/cauli/source/repos/rust/Brainfuck_All_In_One/brainfuck-interpreter/benches/jit_benchmark_test_calculation.bf".to_string())
+                    .expect("Should have been able to read the file");
+    let mut brainfuck_interpreter = BrainfuckInterpreter::new(source_content, false);
+    let breakpoint_lines: Vec<usize> = vec![0, 6];
+    brainfuck_interpreter.set_breakpoints(&breakpoint_lines);
+
+    let callback = |reason: StoppedReasonEnum| {
+        assert_eq!(StoppedReasonEnum::Complete, reason);
+        callback_hit += 1;
+    };
+    brainfuck_interpreter.set_breakpoint_callback(Box::new(callback));
+    brainfuck_interpreter.launch();
+
+    drop(brainfuck_interpreter);
+    assert_eq!(1, callback_hit);
 }
