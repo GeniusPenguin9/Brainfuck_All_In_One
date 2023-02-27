@@ -45,13 +45,53 @@
 					],
 					"default": "off",
 					"description": "Traces the communication between VS Code and the language server."
+				},
+				"vscodeBrainfuck.dapTrace": {
+					"scope": "window",
+					"type": "string",
+					"enum": [
+						"off",
+						"on"
+					],
+					"default": "off",
+					"description": "Traces the communication between VS Code and the DAP server."
 				}
 			}
-		}
+		},
+		"debuggers": [
+			{
+				"type": "brainfuck",
+				"label": "Brainfuck Debugger",
+				"program": "server/brainfuck-dap.exe",
+				"configurationAttributes": {
+					"launch": {
+						"required": [
+							"program"
+						],
+						"properties": {
+							"program": {
+								"type": "string",
+								"description": "The brainfuck file to debug",
+								"default": "${workspaceFolder}/test.bf"
+							}
+						}
+					}
+				},
+				"initialConfigurations": [
+					{
+						"name": "Brainfuck-Debug",
+						"type": "brainfuck",
+						"request": "launch",
+						"program": "${workspaceFolder}/test.bf",
+						"stopOnEntry": false
+					}
+				]
+			}
+		]
 	},
 	"main": "./client/out/extension",
 	"scripts": {
-		"vscode:prepublish": "npm run compile && make-dir server && cpy \"../brainfuck-lsp/target/debug/*.exe\" server",
+		"vscode:prepublish": "npm run compile && make-dir server && cpy \"../brainfuck-lsp/target/debug/*.exe\" server && cpy \"../brainfuck-dap/target/debug/*.exe\" server",
 		"compile": "tsc -b",
 		"watch": "tsc -b -w",
 		"lint": "eslint ./client/src --ext .ts,.tsx",

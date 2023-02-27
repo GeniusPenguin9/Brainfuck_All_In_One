@@ -8,6 +8,8 @@ import {
 	ExtensionContext,
 	window,
 	languages,
+	debug,
+	DebugSession
 } from "vscode";
 
 import {
@@ -22,7 +24,7 @@ let client: LanguageClient;
 // type a = Parameters<>;
 
 export async function activate(context: ExtensionContext) {
-	const traceOutputChannel = window.createOutputChannel("Brainfuck Language Server");
+	const traceOutputChannel = window.createOutputChannel("Brainfuck Language Server Client");
 
 	const command = process.env.SERVER_PATH || context.asAbsolutePath("server/brainfuck-lsp.exe");
 	traceOutputChannel.appendLine("starting command: " + command);
@@ -55,6 +57,18 @@ export async function activate(context: ExtensionContext) {
 	// Create the language client and start the client.
 	client = new LanguageClient("vscodeBrainfuck", "Brainfuck Language Server", serverOptions, clientOptions);
 	client.start();
+
+	if (workspace.getConfiguration("vscodeBrainfuck").get("dapTrace") == "on") {
+		const debugTraceOutputChannel = window.createOutputChannel("Brainfuck DAP Client");
+		debug.registerDebugAdapterTrackerFactory('*', {
+			createDebugAdapterTracker(session: DebugSession) {
+				return {
+					onWillReceiveMessage: m => debugTraceOutputChannel.appendLine(`> ${JSON.stringify(m, undefined, 2)}`),
+					onDidSendMessage: m => debugTraceOutputChannel.appendLine(`< ${JSON.stringify(m, undefined, 2)}`)
+				};
+			}
+		});
+	}
 }
 
 export function deactivate(): Thenable<void> | undefined {
