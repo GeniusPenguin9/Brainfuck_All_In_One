@@ -5,4 +5,5 @@ members = [
 	"brainfuck-dap",
 	"brainfuck-interpreter",
 	"brainfuck-lsp",
+	"brainfuck-dap",
 ]

@@ -43,9 +43,6 @@
 				"kind": "build",
 				"isDefault": true
 			},
-			"options": {
-				"cwd": "brainfuck-lsp"
-			},
 			"label": "rust: cargo build"
 		},
 		{

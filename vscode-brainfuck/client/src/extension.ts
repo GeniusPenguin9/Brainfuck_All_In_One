@@ -9,8 +9,10 @@ import {
 	window,
 	languages,
 	debug,
-	DebugSession
+	DebugSession,
 } from "vscode";
+
+import { platform } from 'os';
 
 import {
 	Executable,
@@ -23,10 +25,12 @@ import {
 let client: LanguageClient;
 // type a = Parameters<>;
 
+const lsp_program: Map<string, string> = new Map([["linux", "server/linux/brainfuck-lsp"], ["win32", "server/windows/brainfuck-lsp.exe"]]);
+
 export async function activate(context: ExtensionContext) {
 	const traceOutputChannel = window.createOutputChannel("Brainfuck Language Server Client");
 
-	const command = process.env.SERVER_PATH || context.asAbsolutePath("server/brainfuck-lsp.exe");
+	const command = process.env.BRAINFUCK_LSPSERVER_PATH || context.asAbsolutePath(lsp_program.get(platform()));
 	traceOutputChannel.appendLine("starting command: " + command);
 	const run: Executable = {
 		command,
@@ -45,7 +49,7 @@ export async function activate(context: ExtensionContext) {
 	// Options to control the language client
 	const clientOptions: LanguageClientOptions = {
 		// Register the server for plain text documents
-		documentSelector: [{ pattern: "**/*.bf" }],
+		documentSelector: [{ language: 'brainfuck' }],
 		synchronize: {
 			// Notify the server about file changes to '.clientrc files contained in the workspace
 			fileEvents: workspace.createFileSystemWatcher("**/.clientrc"),
@@ -60,7 +64,7 @@ export async function activate(context: ExtensionContext) {
 
 	if (workspace.getConfiguration("vscodeBrainfuck").get("dapTrace") == "on") {
 		const debugTraceOutputChannel = window.createOutputChannel("Brainfuck DAP Client");
-		debug.registerDebugAdapterTrackerFactory('*', {
+		debug.registerDebugAdapterTrackerFactory('brainfuck', {
 			createDebugAdapterTracker(session: DebugSession) {
 				return {
 					onWillReceiveMessage: m => debugTraceOutputChannel.appendLine(`> ${JSON.stringify(m, undefined, 2)}`),
