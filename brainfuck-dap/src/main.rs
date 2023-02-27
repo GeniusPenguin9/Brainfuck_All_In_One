@@ -72,14 +72,7 @@ impl<'a> UserData<'a> {
                             .expect("Should have been able to read the file");
                     let mut brainfuck_interpreter = BrainfuckInterpreter::new(source_content, true);
 
-                    unsafe {
-                        let breakpoint_callback: Box<dyn FnMut(StoppedReasonEnum)> = Box::new(breakpoint_callback);
-                        // `Send` trait expected to have 'static lifetime... But breakpoint_callback is 'a by default (same as UserData). 
-                        // Leverage unsafe transmute from Box<dyn Fn() + Send + 'a> to Box<dyn Fn() + Send + 'static>
-                        let breakpoint_callback: Box<dyn FnMut(StoppedReasonEnum) + Send> = transmute(breakpoint_callback);
-                        brainfuck_interpreter.set_breakpoint_callback(breakpoint_callback);
-                    }
-
+                    brainfuck_interpreter.set_breakpoint_callback(Box::new(breakpoint_callback));
                     brainfuck_interpreter.set_breakpoints(&self.breakpoint_lines);
                     brainfuck_interpreter.launch();
 

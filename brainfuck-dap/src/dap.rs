@@ -10,12 +10,12 @@ type Message = String;
 
 /* ----------------- START: DAP Service for user ----------------- */
 
-pub struct DapService<'a, TUserData: Send> {
+pub struct DapService<'a, TUserData> {
     dealer: Dealer<'a, TUserData>,
     event_rx: Option<Receiver<Message>>,
 }
 
-impl<'a, TUserData: Send> DapService<'a, TUserData> {
+impl<'a, TUserData> DapService<'a, TUserData> {
     #[allow(dead_code)]
     pub fn new(user_data: TUserData) -> DapService<'a, TUserData> {
         DapService {
@@ -103,7 +103,7 @@ pub struct EventPoster {
 }
 impl EventPoster {
     #[allow(dead_code)]
-    pub fn send_event<T: Serialize>(& self, event: &T) {
+    pub fn send_event<T: Serialize>(&self, event: &T) {
         let event_str = serde_json::to_string(event).unwrap();
         print!("{}\r\n", event_str);
     }

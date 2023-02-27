@@ -37,7 +37,7 @@ pub struct BrainfuckInterpreter<'a> {
     source_content: String,
     debug_mode: bool,
     breakpoint_lines: Vec<usize>,
-    breakpoint_callback: Option<Box<dyn FnMut(StoppedReasonEnum) + Send + 'a>>,
+    breakpoint_callback: Option<Box<dyn FnMut(StoppedReasonEnum) + 'a>>,
     generator: Option<Generator<'a, (), StoppedReasonEnum>>,
 }
 
@@ -52,10 +52,7 @@ impl<'a> BrainfuckInterpreter<'a> {
         }
     }
 
-    pub fn set_breakpoint_callback(
-        &mut self,
-        fn_handler: Box<dyn FnMut(StoppedReasonEnum) + Send + 'a>,
-    ) {
+    pub fn set_breakpoint_callback(&mut self, fn_handler: Box<dyn FnMut(StoppedReasonEnum) + 'a>) {
         self.breakpoint_callback = Some(fn_handler);
     }
 
