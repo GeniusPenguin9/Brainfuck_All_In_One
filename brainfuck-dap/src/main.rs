@@ -45,7 +45,7 @@ impl<'a> UserData<'a> {
         Ok(vec![Breakpoint { verified: true }; breakpoint_len])
     }
 
-    fn launch(&mut self, launch_request_args: LaunchRequestArguments) {
+    fn launch(&mut self, launch_request_args: LaunchRequestArguments) -> Result<(), String> {
         let event_poster = self.event_poster.clone();
         let callback_runtime = self.runtime.clone();
         let breakpoint_callback = move |reason: StoppedReasonEnum| match reason {
@@ -80,9 +80,50 @@ impl<'a> UserData<'a> {
                 }
                 RunningState::Running(_) => todo!(), //panic??
             }
-        }
+        };
+        Ok(())
+    }
+
+    fn run(&mut self, _continue_request_args: ContinueRequestArguments) -> Result<(), String> {
+        if let Ok(mut current_runtime_lock) = self.runtime.lock() {
+            match &mut *current_runtime_lock {
+                RunningState::Idle => todo!(),
+                RunningState::Running(brainfuck_interpreter) => {
+                    brainfuck_interpreter.run();
+                }
+            }
+        };
+        Ok(())
+    }
+
+    fn next(&mut self, _next_request_args: NextRequestArguments) -> Result<(), String> {
+        if let Ok(mut current_runtime_lock) = self.runtime.lock() {
+            match &mut *current_runtime_lock {
+                RunningState::Idle => todo!(),
+                RunningState::Running(brainfuck_interpreter) => {
+                    brainfuck_interpreter.next();
+                }
+            }
+        };
+        Ok(())
+    }
+
+    fn disconnect(
+        &mut self,
+        _disconnect_request_args: DisconnectRequestArguments,
+    ) -> Result<(), String> {
+        if let Ok(mut current_runtime_lock) = self.runtime.lock() {
+            match &mut *current_runtime_lock {
+                RunningState::Idle => todo!(),
+                RunningState::Running(_) => {
+                    *current_runtime_lock = RunningState::Idle;
+                }
+            }
+        };
+        Ok(())
     }
 }
+
 /* ----------------- initialize ----------------- */
 #[derive(Deserialize)]
 struct InitializeRequestArguments {
@@ -226,6 +267,25 @@ struct LaunchRequestArguments {
     source: Source,
 }
 
+/* ----------------- continue ----------------- */
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContinueRequestArguments {
+    thread_id: usize,
+}
+
+/* ----------------- next ----------------- */
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NextRequestArguments {
+    thread_id: usize,
+}
+/* ----------------- disconnect ----------------- */
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DisconnectRequestArguments {
+    restart: Option<bool>,
+}
 /* ----------------- main ----------------- */
 
 fn main() {
@@ -239,6 +299,10 @@ fn main() {
         "setBreakpoints".to_string(),
         Box::new(UserData::set_breakpoints),
     )
+    .register("launch".to_string(), Box::new(UserData::launch))
+    .register("continue".to_string(), Box::new(UserData::run))
+    .register("next".to_string(), Box::new(UserData::next))
+    .register("disconnect".to_string(), Box::new(UserData::disconnect))
     .build();
     dap_service.start();
 }
@@ -264,6 +328,35 @@ fn test_initialization_request() {
     child_stdin
         .write_all(initialization_request.as_bytes())
         .unwrap();
+    // Close stdin to finish and avoid indefinite blocking
+    drop(child_stdin);
+    thread::sleep(time::Duration::from_secs(5));
+
+    let mut read_buf: [u8; 300] = [0; 300];
+    child_stdout.read(&mut read_buf).unwrap();
+    child.kill().unwrap();
+
+    let actual = String::from_utf8(read_buf.to_vec()).unwrap();
+    assert!(actual.contains("Content-Length: 129\r\n\r\n{\"type\":\"response\",\"request_seq\":153,\"success\":true,\"command\":\"initialize\",\"body\":{\"supportsSingleThreadExecutionRequests\":true}}\r\nContent-Length: 38\r\n\r\n{\"type\":\"event\",\"event\":\"initialized\"}"));
+}
+
+#[test]
+fn test_unknown_request() {
+    use std::io::{Read, Write};
+    use std::process::{Command, Stdio};
+    use std::{thread, time};
+
+    let mut child = Command::new("cargo")
+        .args(["run"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed during cargo run");
+
+    let child_stdin = child.stdin.as_mut().unwrap();
+    let child_stdout = child.stdout.as_mut().unwrap();
+    let unknown_request = "Content-Length: 85\r\n\r\n{\"command\": \"abcdefghij\",\"arguments\": {\"restart\": false},\"type\": \"request\",\"seq\": 1}\r\n";
+    child_stdin.write_all(unknown_request.as_bytes()).unwrap();
     // Close stdin to finish and avoid indefinite blocking
     drop(child_stdin);
     thread::sleep(time::Duration::from_secs(5));
