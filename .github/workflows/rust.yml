@@ -21,6 +21,8 @@ jobs:
         node-version: 16
         cache: 'npm'
         cache-dependency-path: vscode-brainfuck/package-lock.json
+    - name: InstallDeps
+      run: make setup_env
     - name: Build
       run: make
 #     - name: Run tests
