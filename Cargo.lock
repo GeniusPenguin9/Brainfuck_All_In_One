@@ -11,6 +11,7 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 [[package]]
 name = "assembler"
 version = "0.10.1"
+source = "git+https://github.com/CaulyKan/assembler.git?branch=windows#18a3e9447b624f7f0671a27a4ef767f9c15068ca"
 dependencies = [
  "libc",
  "windows-sys 0.42.0",

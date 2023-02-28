@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 brainfuck-analyzer = {path = "../brainfuck-analyzer"}
-assembler = {path = "../../assembler/assembler"}
+assembler = {git="https://github.com/CaulyKan/assembler.git", branch="windows"}
 libc = "0.2.138"
 clap = { version = "4.0.29", features = ["derive"] }
 generator = "0.7.3"
