@@ -15,4 +15,5 @@ build_rust:
 	cargo build --release --target=x86_64-unknown-linux-musl
 
 build_vscode:
+	cd vscode-brainfuck && npm install
 	cd vscode-brainfuck && npm run package
