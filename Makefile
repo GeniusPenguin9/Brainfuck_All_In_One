@@ -8,7 +8,7 @@ clean:
 setup_env:
 	rustup target add x86_64-pc-windows-gnu
 	rustup target add x86_64-unknown-linux-musl
-	apt-get install gcc gcc-mingw-w64 musl-tools
+	sudo apt-get install gcc gcc-mingw-w64 musl-tools
 
 build_rust:
 	cargo build --release --target=x86_64-pc-windows-gnu
