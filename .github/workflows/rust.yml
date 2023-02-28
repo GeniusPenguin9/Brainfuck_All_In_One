@@ -25,5 +25,5 @@ jobs:
       run: make setup_env
     - name: Build
       run: make
-#     - name: Run tests
-#       run: cargo test --verbose
+    - name: test
+      run: cargo test --verbose
