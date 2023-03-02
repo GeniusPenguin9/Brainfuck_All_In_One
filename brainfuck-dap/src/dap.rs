@@ -285,10 +285,19 @@ impl<'a, TUserData> Dealer<'a, TUserData> {
     pub fn process_request(&mut self, io_request: &str) -> String {
         let dap_request: DAPRequest = serde_json::from_str(io_request).unwrap();
         let handler = self.function_map.get(&dap_request.command);
-        // TODO:
         match handler {
             Some(h) => h(&mut self.user_data, io_request.to_string()),
-            None => todo!(),
+            None => {
+                let errorResponse = DAPResponseWithBody::<()> {
+                    response_type: "response".to_string(),
+                    request_seq: dap_request.seq.clone(),
+                    success: false,
+                    command: dap_request.command.clone(),
+                    message: None,
+                    body: None,
+                };
+                serde_json::to_string(&errorResponse).unwrap()
+            },
         }
     }
 }

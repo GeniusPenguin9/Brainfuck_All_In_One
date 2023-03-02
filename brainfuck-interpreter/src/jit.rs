@@ -246,7 +246,8 @@ pub fn test_jit_with_io() {
     // should find "!" in test terminal
 }
 
-#[test]
+// This test case need manual input, disable by default for auto testing
+// #[test]
 pub fn test_jit_with_io2() {
     let input = ",+.";
     let parse_result = parse(input).unwrap();
