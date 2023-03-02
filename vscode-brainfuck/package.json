@@ -91,6 +91,20 @@
 					}
 				]
 			}
+		],
+		"commands": [
+			{
+				"command": "brainfuck.runAutoJIT",
+				"title": "Brainfuck: Run current file with automatic JIT"
+			},
+			{
+				"command": "brainfuck.runWithJIT",
+				"title": "Brainfuck: Run current file with JIT enabled"
+			},
+			{
+				"command": "brainfuck.runWithoutJIT",
+				"title": "Brainfuck: Run current file without JIT"
+			}
 		]
 	},
 	"main": "./out/main.js",
