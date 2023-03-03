@@ -243,8 +243,7 @@ pub enum StoppedReasonEnum {
 pub fn test_breakpoint_debug_mode() {
     use std::fs;
     let mut callback_hit = 0;
-    let source_content =  fs::read_to_string("C:/Users/cauli/source/repos/rust/Brainfuck_All_In_One/brainfuck-interpreter/benches/jit_benchmark_test_calculation.bf".to_string())
-                    .expect("Should have been able to read the file");
+    let source_content = include_str!("../benches/jit_benchmark_test_calculation.bf").to_string();
     let mut brainfuck_interpreter = BrainfuckInterpreter::new(source_content, true);
     let breakpoint_lines: Vec<usize> = vec![0, 6];
     brainfuck_interpreter.set_breakpoints(&breakpoint_lines);
@@ -264,8 +263,7 @@ pub fn test_breakpoint_debug_mode() {
 pub fn test_breakpoint_continue_debug_mode() {
     use std::fs;
     let mut callback_hit = 0;
-    let source_content =  fs::read_to_string("C:/Users/cauli/source/repos/rust/Brainfuck_All_In_One/brainfuck-interpreter/benches/jit_benchmark_test_calculation.bf".to_string())
-                    .expect("Should have been able to read the file");
+    let source_content = include_str!("../benches/jit_benchmark_test_calculation.bf").to_string();
     let mut brainfuck_interpreter = BrainfuckInterpreter::new(source_content, true);
     let breakpoint_lines: Vec<usize> = vec![0, 6];
     brainfuck_interpreter.set_breakpoints(&breakpoint_lines);
@@ -291,8 +289,7 @@ pub fn test_breakpoint_continue_debug_mode() {
 pub fn test_breakpoint_disable_debug_mode() {
     use std::fs;
     let mut callback_hit = 0;
-    let source_content =  fs::read_to_string("C:/Users/cauli/source/repos/rust/Brainfuck_All_In_One/brainfuck-interpreter/benches/jit_benchmark_test_calculation.bf".to_string())
-                    .expect("Should have been able to read the file");
+    let source_content = include_str!("../benches/jit_benchmark_test_calculation.bf").to_string();
     let mut brainfuck_interpreter = BrainfuckInterpreter::new(source_content, false);
     let breakpoint_lines: Vec<usize> = vec![0, 6];
     brainfuck_interpreter.set_breakpoints(&breakpoint_lines);

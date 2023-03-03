@@ -222,6 +222,7 @@ unsafe extern "sysv64" fn runtime_resize(
 }
 
 #[test]
+#[cfg(windows)]
 pub fn test_jit_simple() {
     let input = ">>++<-";
     let parse_result = parse(input).unwrap();
@@ -235,6 +236,7 @@ pub fn test_jit_simple() {
 }
 
 #[test]
+#[cfg(windows)]
 pub fn test_jit_with_io() {
     let input = "+++++++++++++++++++++++++++++++++.";
     let parse_result = parse(input).unwrap();
@@ -246,7 +248,8 @@ pub fn test_jit_with_io() {
     // should find "!" in test terminal
 }
 
-#[test]
+// This test case need manual input, disable by default for auto testing
+// #[test]
 pub fn test_jit_with_io2() {
     let input = ",+.";
     let parse_result = parse(input).unwrap();
@@ -259,6 +262,7 @@ pub fn test_jit_with_io2() {
 }
 
 #[test]
+#[cfg(windows)]
 pub fn test_jit_with_loop() {
     let input = "++[>+<-]";
     let parse_result = parse(input).unwrap();
@@ -272,6 +276,7 @@ pub fn test_jit_with_loop() {
 }
 
 #[test]
+#[cfg(windows)]
 pub fn test_jit_memory_extension() {
     let input = ">>>>++";
     let parse_result = parse(input).unwrap();
