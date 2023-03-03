@@ -3,9 +3,9 @@
 	"description": "Add support for Brainfuck language in VSCode",
 	"author": "LindsayWong",
 	"license": "MIT",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"publisher": "BabyPenguin",
-	"icon": "icon.png",
+	"icon": "images/icon.png",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/GeniusPenguin9/brainfuck-lsp"
