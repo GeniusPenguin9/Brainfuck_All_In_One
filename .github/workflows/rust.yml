@@ -1,0 +1,29 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3
+      with:
+        node-version: 16
+        cache: 'npm'
+        cache-dependency-path: vscode-brainfuck/package-lock.json
+    - name: InstallDeps
+      run: make setup_env
+    - name: Build
+      run: make
+    - name: test
+      run: cargo test --verbose
