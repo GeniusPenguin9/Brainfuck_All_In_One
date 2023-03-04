@@ -12,7 +12,7 @@
 			"type": "lldb",
 			"request": "launch",
 			"name": "Launch dap",
-			"program": "${workspaceFolder}/brainfuck-dap/target/debug/brainfuck-dap.exe",
+			"program": "${workspaceFolder}/target/debug/brainfuck-dap.exe",
 			"args": [],
 			"cwd": "${workspaceFolder}"
 		},

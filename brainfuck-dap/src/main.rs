@@ -68,7 +68,7 @@ impl<'a> UserData<'a> {
             match *current_runtime_lock {
                 RunningState::Idle => {
                     let source_content =
-                        fs::read_to_string(launch_request_args.source.path.unwrap())
+                        fs::read_to_string(launch_request_args.program)
                             .expect("Should have been able to read the file");
                     let mut brainfuck_interpreter = BrainfuckInterpreter::new(source_content, true);
 
@@ -122,6 +122,8 @@ impl<'a> UserData<'a> {
         };
         Ok(())
     }
+
+    
 }
 
 /* ----------------- initialize ----------------- */
@@ -264,7 +266,7 @@ impl Event<ExitedEventBody> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LaunchRequestArguments {
-    source: Source,
+    program: String,
 }
 
 /* ----------------- continue ----------------- */
@@ -325,6 +327,69 @@ fn test_initialization_request() {
     let child_stdin = child.stdin.as_mut().unwrap();
     let child_stdout = child.stdout.as_mut().unwrap();
     let initialization_request = "Content-Length: 128\r\n\r\n{\r\n    \"seq\": 153,\r\n    \"type\": \"request\",\r\n    \"command\": \"initialize\",\r\n    \"arguments\": {\r\n        \"adapterID\": \"a\"\r\n    }\r\n}\r\n";
+    child_stdin
+        .write_all(initialization_request.as_bytes())
+        .unwrap();
+    // Close stdin to finish and avoid indefinite blocking
+    drop(child_stdin);
+    thread::sleep(time::Duration::from_secs(5));
+
+    let mut read_buf: [u8; 300] = [0; 300];
+    child_stdout.read(&mut read_buf).unwrap();
+    child.kill().unwrap();
+
+    let actual = String::from_utf8(read_buf.to_vec()).unwrap();
+    assert!(actual.contains("Content-Length: 129\r\n\r\n{\"type\":\"response\",\"request_seq\":153,\"success\":true,\"command\":\"initialize\",\"body\":{\"supportsSingleThreadExecutionRequests\":true}}\r\nContent-Length: 38\r\n\r\n{\"type\":\"event\",\"event\":\"initialized\"}"));
+}
+
+#[test]
+fn test_set_breakpoints_request() {
+    use std::io::{Read, Write};
+    use std::process::{Command, Stdio};
+    use std::{thread, time};
+
+    let mut child = Command::new("cargo")
+        .args(["run"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed during cargo run");
+   
+    let child_stdin = child.stdin.as_mut().unwrap();
+    let child_stdout = child.stdout.as_mut().unwrap();
+    let initialization_request = "Content-Length: 128\r\n\r\n{\r\n    \"seq\": 153,\r\n    \"type\": \"request\",\r\n    \"command\": \"initialize\",\r\n    \"arguments\": {\r\n        \"adapterID\": \"a\"\r\n    }\r\n}\r\n";
+    child_stdin
+        .write_all(initialization_request.as_bytes())
+        .unwrap();
+    // Close stdin to finish and avoid indefinite blocking
+    drop(child_stdin);
+    thread::sleep(time::Duration::from_secs(5));
+
+    let mut read_buf: [u8; 300] = [0; 300];
+    child_stdout.read(&mut read_buf).unwrap();
+    child.kill().unwrap();
+
+    let actual = String::from_utf8(read_buf.to_vec()).unwrap();
+    assert!(actual.contains("Content-Length: 129\r\n\r\n{\"type\":\"response\",\"request_seq\":153,\"success\":true,\"command\":\"initialize\",\"body\":{\"supportsSingleThreadExecutionRequests\":true}}\r\nContent-Length: 38\r\n\r\n{\"type\":\"event\",\"event\":\"initialized\"}"));
+
+}
+
+#[test]
+fn test_launch_request() {
+    use std::io::{Read, Write};
+    use std::process::{Command, Stdio};
+    use std::{thread, time};
+
+    let mut child = Command::new("cargo")
+        .args(["run"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed during cargo run");
+
+    let child_stdin = child.stdin.as_mut().unwrap();
+    let child_stdout = child.stdout.as_mut().unwrap();
+    let initialization_request = "Content-Length: 274\r\n\r\n{\"command\": \"launch\",\"arguments\": {\"name\": \"Brainfuck-Debug\",\"type\": \"brainfuck\",\"request\": \"launch\",\"program\":\"C:\\Users\\cauli\\source\\repos\\rust\\test/test.bf\",\"__configurationTarget\": 6,\"__sessionId\": \"36201e43-539a-4fd6-beb8-5e0bc2b18abe\"},\"type\": \"request\",\"seq\": 2}\r\n";
     child_stdin
         .write_all(initialization_request.as_bytes())
         .unwrap();
