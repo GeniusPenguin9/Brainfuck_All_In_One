@@ -1,38 +1,57 @@
-# LSP Example
+![](images/brainfuck.png)
+# Brainfuck All In One
+[Brainfuck All In One](https://marketplace.visualstudio.com/items?itemName=BabyPenguin.vscode-brainfuck) provides full support for brainfuck developing.
 
-Heavily documented sample code for https://code.visualstudio.com/api/language-extensions/language-server-extension-guide
+**For this extension to work, your brainfuck file should have '.bf' file extension.**
 
-## Functionality
+## Features
+* Formatting
+* Inlay Hints
+* Linting
+* Running brainfuck program with/without JIT
+* Debugging (To be done)
 
-This Language Server works for plain text file. It has the following language features:
-- Completions
-- Diagnostics regenerated on each file change or configuration change
+![](images/demo.png)
 
-It also includes an End-to-End test.
+### Formatting
+Use 'Format Document' command to format current .bf file.
 
-## Structure
+The formatter will try to format in following rule:
+1. '\[' & '\]' will occupy a single line and indent internal symbols.
+2. zero or more movements(<>), one or more calculations(+-), and zero or more IO(.,) will compose a line.
 
+### Linting
+The linting tool will work automatically for .bf files.
+
+Linting rules:
+1. only '[]+-<>,.' are valid brainfuck symbols
+2. support '//' & '/* */' style comment
+
+### Running brainfuck
+The extension provides three commands:
+* 'Brainfuck: Run current file with JIT enabled': This command will precompile the whole program into x86_64 assembly code and then start executing. This mode is suitable for compute-intensive programs.
+* 'Brainfuck: Run current file without JIT": This command will interpret brainfuck program one token after another. This mode is suitable for small programs.
+* 'Brainfuck: Run current file with automatic JIT': This command will first launch the program without JIT, and when it detects a loop is executed for 3 times, it will trigger JIT to begin compiling this loop in background and switch to compiled code when ready. This mode is balanced.
+
+### Debugging
+The extension provides a DAP to run and debug .bf file, and supports following features:
+1. breakpoint
+2. stepping
+3. view current pointer and memory
+
+To debug a .bf file, use following config in .vscode/launch.json:
 ```
-.
-├── client // Language Client
-│   ├── src
-│   │   ├── test // End to End tests for Language Client / Server
-│   │   └── extension.ts // Language Client entry point
-├── package.json // The extension manifest.
-└── server // Language Server
-    └── src
-        └── server.ts // Language Server entry point
+  {
+      "name": "debug",
+      "type": "brainfuck",
+      "request": "launch",
+      "program": "${workspaceFolder}/test.bf"
+  }
 ```
 
-## Running the Sample
 
-- Run `npm install` in this folder. This installs all necessary npm modules in both the client and server folder
-- Open VS Code on this folder.
-- Press Ctrl+Shift+B to start compiling the client and server in [watch mode](https://code.visualstudio.com/docs/editor/tasks#:~:text=The%20first%20entry%20executes,the%20HelloWorld.js%20file.).
-- Switch to the Run and Debug View in the Sidebar (Ctrl+Shift+D).
-- Select `Launch Client` from the drop down (if it is not already).
-- Press ▷ to run the launch config (F5).
-- If you want to debug the server as well, use the launch configuration `Attach to Server`
-- In the [Extension Development Host](https://code.visualstudio.com/api/get-started/your-first-extension#:~:text=Then%2C%20inside%20the%20editor%2C%20press%20F5.%20This%20will%20compile%20and%20run%20the%20extension%20in%20a%20new%20Extension%20Development%20Host%20window.) instance of VSCode, open a document in 'plain text' language mode.
-  - Type `j` or `t` to see `Javascript` and `TypeScript` completion.
-  - Enter text content such as `AAA aaa BBB`. The extension will emit diagnostics for all words in all-uppercase.
+## More Information
+* [Marketplace link](https://marketplace.visualstudio.com/items?itemName=BabyPenguin.vscode-brainfuck&ssr=false#overview)
+* [Github homepage](https://github.com/GeniusPenguin9/Brainfuck_All_In_One)
+* [Submit an issue](https://github.com/GeniusPenguin9/Brainfuck_All_In_One/issues/new)
+* [History versions](https://marketplace.visualstudio.com/items?itemName=BabyPenguin.vscode-brainfuck&ssr=false#version-history)
