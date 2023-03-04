@@ -9,10 +9,14 @@ import {
 	window,
 	languages,
 	debug,
+	Terminal,
 	DebugSession,
+	TerminalOptions,
+	commands,
 } from "vscode";
 
 import { platform } from 'os';
+import { existsSync } from 'fs';
 
 import {
 	Executable,
@@ -26,6 +30,7 @@ let client: LanguageClient;
 // type a = Parameters<>;
 
 const lsp_program: Map<string, string> = new Map([["linux", "server/linux/brainfuck-lsp"], ["win32", "server/windows/brainfuck-lsp.exe"]]);
+const interpreter_program: Map<string, string> = new Map([["linux", "server/linux/brainfuck-interpreter"], ["win32", "server/windows/brainfuck-interpreter.exe"]]);
 
 export async function activate(context: ExtensionContext) {
 	const traceOutputChannel = window.createOutputChannel("Brainfuck Language Server Client");
@@ -73,6 +78,39 @@ export async function activate(context: ExtensionContext) {
 			}
 		});
 	}
+
+	const interpreter = context.asAbsolutePath(interpreter_program.get(platform()));
+	async function launch_interpreter(jit_config: string) {
+		const file = window.activeTextEditor?.document.fileName;
+		if (existsSync(file)) {
+			const term = await createTerminal();
+			term.show();
+			term.sendText(interpreter + " --mode=" + jit_config + " --file=\"" + file + "\"");
+		}
+		else {
+			window.showErrorMessage("Please open a valid .bf file.");
+		}
+	}
+	context.subscriptions.push(
+		commands.registerCommand("brainfuck.runWithJIT", () => launch_interpreter("jit")),
+		commands.registerCommand("brainfuck.runAutoJIT", () => launch_interpreter("autojit")),
+		commands.registerCommand("brainfuck.runWithoutJIT", () => launch_interpreter("interpret"))
+	);
+}
+
+
+
+async function createTerminal(): Promise<Terminal> {
+	const name = "Brainfuck/Launch";
+	for (const term of window.terminals) {
+		if (term.name == name) {
+			return term;
+		}
+	}
+	const options: TerminalOptions = {
+		"name": name,
+	};
+	return window.createTerminal(options);
 }
 
 export function deactivate(): Thenable<void> | undefined {
