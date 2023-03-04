@@ -288,7 +288,7 @@ impl<'a, TUserData> Dealer<'a, TUserData> {
         match handler {
             Some(h) => h(&mut self.user_data, io_request.to_string()),
             None => {
-                let errorResponse = DAPResponseWithBody::<()> {
+                let error_response = DAPResponseWithBody::<()> {
                     response_type: "response".to_string(),
                     request_seq: dap_request.seq.clone(),
                     success: false,
@@ -296,7 +296,7 @@ impl<'a, TUserData> Dealer<'a, TUserData> {
                     message: None,
                     body: None,
                 };
-                serde_json::to_string(&errorResponse).unwrap()
+                serde_json::to_string(&error_response).unwrap()
             },
         }
     }
