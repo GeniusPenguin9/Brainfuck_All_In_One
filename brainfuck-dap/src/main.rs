@@ -7,6 +7,8 @@ use std::{
 use brainfuck_interpreter::{BrainfuckDebugInterpreter, OutputCategoryEnum, StoppedReasonEnum};
 use dap::{DapService, EventPoster};
 use serde::{Deserialize, Serialize};
+use simplelog::*;
+use std::fs::File;
 mod dap;
 
 struct UserData<'a> {
@@ -46,6 +48,7 @@ impl<'a> UserData<'a> {
     }
 
     fn launch(&mut self, launch_request_args: LaunchRequestArguments) -> Result<(), String> {
+        info!(">> brainfuck-dap/main launch function");
         let mut event_poster = self.event_poster.clone();
         let callback_runtime = self.runtime.clone();
         let breakpoint_callback = move |reason: StoppedReasonEnum| match reason {
@@ -58,6 +61,13 @@ impl<'a> UserData<'a> {
                 };
                 event_poster.queue_event(&Event::<TerminatedEventBody>::new());
                 event_poster.queue_event(&Event::<ExitedEventBody>::new(0));
+            }
+            StoppedReasonEnum::Terminated => {
+                if let Ok(mut runtime_lock) = callback_runtime.lock() {
+                    *runtime_lock = RunningState::Idle;
+                };
+                event_poster.queue_event(&Event::<TerminatedEventBody>::new());
+                event_poster.queue_event(&Event::<ExitedEventBody>::new(-1));
             }
             StoppedReasonEnum::Step => event_poster
                 .queue_event(&Event::<StoppedEventBody>::new(StoppedEventBodyEnum::Step)),
@@ -83,16 +93,19 @@ impl<'a> UserData<'a> {
                         BrainfuckDebugInterpreter::new(source_content);
 
                     brainfuck_debug_interpreter.set_breakpoints(&self.breakpoint_lines);
+                    info!("brainfuck_debug_interpreter init completed.");
                     brainfuck_debug_interpreter.launch(
                         Some(Box::new(breakpoint_callback)),
                         Some(Box::new(output_callback)),
                     );
+                    info!("brainfuck_debug_interpreter launch completed.");
 
                     *current_runtime_lock = RunningState::Running(brainfuck_debug_interpreter);
                 }
                 RunningState::Running(_) => todo!(), //panic??
             }
         };
+        info!("<< brainfuck-dap/main launch function. Successful.");
         Ok(())
     }
 
@@ -134,8 +147,6 @@ impl<'a> UserData<'a> {
         };
         Ok(())
     }
-
-    
 }
 
 /* ----------------- initialize ----------------- */
@@ -332,6 +343,13 @@ struct DisconnectRequestArguments {
 /* ----------------- main ----------------- */
 
 fn main() {
+    CombinedLogger::init(vec![WriteLogger::new(
+        LevelFilter::Debug,
+        Config::default(),
+        File::create("brainfuck_interpreter.log").unwrap(),
+    )])
+    .unwrap();
+    info!(">> brainfuck-dap main");
     let mut dap_service = DapService::new_with_poster(|event_poster| UserData {
         event_poster,
         runtime: Arc::new(Mutex::new(RunningState::Idle)),
@@ -348,6 +366,7 @@ fn main() {
     .register("disconnect".to_string(), Box::new(UserData::disconnect))
     .build();
     dap_service.start();
+    info!("<< brainfuck-dap main");
 }
 
 /* ----------------- test ----------------- */
@@ -398,9 +417,9 @@ fn test_launch_request() {
 
     let child_stdin = child.stdin.as_mut().unwrap();
     let child_stdout = child.stdout.as_mut().unwrap();
-    let initialization_request = "Content-Length: 274\r\n\r\n{\"command\": \"launch\",\"arguments\": {\"name\": \"Brainfuck-Debug\",\"type\": \"brainfuck\",\"request\": \"launch\",\"program\":\"C:\\Users\\cauli\\source\\repos\\rust\\test/test.bf\",\"__configurationTarget\": 6,\"__sessionId\": \"36201e43-539a-4fd6-beb8-5e0bc2b18abe\"},\"type\": \"request\",\"seq\": 2}\r\n";
+    let launch_request = "Content-Length: 233\r\n\r\n{\"command\": \"launch\",\"arguments\": {\"name\": \"Brainfuck-Debug\",\"type\": \"brainfuck\",\"request\": \"launch\",\"program\":\"../test.bf\",\"__configurationTarget\": 6,\"__sessionId\": \"36201e43-539a-4fd6-beb8-5e0bc2b18abe\"},\"type\": \"request\",\"seq\": 2}\r\n";
     child_stdin
-        .write_all(initialization_request.as_bytes())
+        .write_all(launch_request.as_bytes())
         .unwrap();
     // Close stdin to finish and avoid indefinite blocking
     drop(child_stdin);
@@ -411,7 +430,7 @@ fn test_launch_request() {
     child.kill().unwrap();
 
     let actual = String::from_utf8(read_buf.to_vec()).unwrap();
-    assert!(actual.contains("Content-Length: 129\r\n\r\n{\"type\":\"response\",\"request_seq\":153,\"success\":true,\"command\":\"initialize\",\"body\":{\"supportsSingleThreadExecutionRequests\":true}}\r\nContent-Length: 38\r\n\r\n{\"type\":\"event\",\"event\":\"initialized\"}"));
+    assert!(actual.contains("Content-Length: 81\r\n\r\n{\"type\":\"response\",\"request_seq\":2,\"success\":true,\"command\":\"launch\",\"body\":null}"));
 }
 
 #[test]

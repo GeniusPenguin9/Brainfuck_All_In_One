@@ -1,14 +1,16 @@
 use brainfuck_analyzer::{parse, Position, Range, Token, TokenGroup, TokenType};
 
 use core::time;
+use std::borrow::BorrowMut;
 use std::io::Read;
 use std::marker::PhantomData;
-use std::mem::transmute;
-use std::sync::mpsc;
+use std::mem::{self, transmute};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
 use std::vec;
-
+use simplelog::*;
 use crate::interpreter;
 use crate::jit::IBrainfuckMemory;
 
@@ -46,12 +48,14 @@ pub struct BrainfuckDebugInterpreter<'a> {
     interpreter_debug_tx: Option<Sender<StartReasonEnum>>,
     thread: Option<JoinHandle<()>>,
     phantom_data: PhantomData<&'a ()>,
+    should_stop: Arc<AtomicBool>,
 }
 
 pub struct BrainfuckDebugThreadData<'a> {
     interpreter_debug_rx: Receiver<StartReasonEnum>,
     breakpoint_callback: Option<Box<dyn FnMut(StoppedReasonEnum) + 'a + Send>>,
     output_callback: Option<Box<dyn FnMut(OutputCategoryEnum, String) + 'a + Send>>,
+    should_stop: Arc<AtomicBool>,
 }
 
 impl<'a> BrainfuckDebugInterpreter<'a> {
@@ -62,6 +66,7 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
             interpreter_debug_tx: None,
             thread: None,
             phantom_data: Default::default(),
+            should_stop: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -82,7 +87,11 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
         debug_thread_data: &mut BrainfuckDebugThreadData,
         brainfuck_memory: &mut BrainfuckMemory,
         token: &Token,
-    ) {
+    ) -> bool {
+        if debug_thread_data.should_stop.load(Ordering::Relaxed) {
+            return false;
+        }
+
         match &token.token_type {
             TokenType::PointerIncrement => {
                 if brainfuck_memory.memory.len() - brainfuck_memory.index == 1 {
@@ -132,7 +141,11 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
             TokenType::SubGroup(sg) => {
                 while brainfuck_memory.memory[brainfuck_memory.index] != 0 {
                     for token in sg.tokens().into_iter() {
-                        Self::interpret_token(debug_thread_data, brainfuck_memory, token);
+                        if Self::interpret_token(debug_thread_data, brainfuck_memory, token)
+                            == false
+                        {
+                            return false;
+                        }
                     }
                 }
             }
@@ -149,7 +162,8 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
                 }
             }
             _ => (),
-        }
+        };
+        true
     }
 
     fn _insert_breakpoints(vec_token: &mut Vec<Token>, breakpoint_lines: &mut Vec<usize>) {
@@ -193,6 +207,7 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
         breakback_callback: Option<Box<dyn FnMut(StoppedReasonEnum) + 'a + Send>>,
         output_callback: Option<Box<dyn FnMut(OutputCategoryEnum, String) + 'a + Send>>,
     ) {
+        info!(">> debug_interpreter launch function");
         let mut parse_result = parse(&self.source_content).unwrap();
 
         let vec_token = parse_result.parse_token_group.tokens_mut();
@@ -201,33 +216,54 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
 
         //drop(vec_token);
 
-        // TODO: solve unsafe
+        /*
+         * Why exception: 
+         * default lifetime of callback handler is 'a, equal to `self`. 
+         * default lifetime of thread is static.
+         * 
+         * Avoid unsafe side effect: 
+         * impl drop() for self to make sure thread will no longer alive after `self` drop.
+         * lifetime of thread: static => 'a
+         */
         let bc: Option<Box<dyn FnMut(StoppedReasonEnum) + 'static + Send>> =
             unsafe { transmute(breakback_callback) };
         let oc: Option<Box<dyn FnMut(OutputCategoryEnum, String) + 'static + Send>> =
             unsafe { transmute(output_callback) };
         let token_group = parse_result.parse_token_group;
         let (interpreter_debug_tx, interpreter_debug_rx) = mpsc::channel();
+        let should_stop = self.should_stop.clone();
         self.interpreter_debug_tx = Some(interpreter_debug_tx);
         self.thread = Some(thread::spawn(move || {
-            let mut debug_data = BrainfuckDebugThreadData {
+            let debug_data = BrainfuckDebugThreadData {
                 interpreter_debug_rx,
                 breakpoint_callback: bc,
                 output_callback: oc,
+                should_stop,
             };
             Self::debug_thread(debug_data, token_group);
         }));
+        info!("<< debug_interpreter launch function");
     }
 
     fn debug_thread(mut debug_data: BrainfuckDebugThreadData, token_group: TokenGroup) {
+        info!(">> debug_interpreter debug_thread function");
         let mut memory = BrainfuckMemory::new();
 
         for token in token_group.tokens().into_iter() {
-            Self::interpret_token(&mut debug_data, &mut memory, token);
+            if Self::interpret_token(&mut debug_data, &mut memory, token) == false {
+                if let Some(bc) = &mut debug_data.breakpoint_callback {
+                    (*bc)(StoppedReasonEnum::Terminated);
+                    return;
+                };
+            }
         }
+        info!("debug_thread execute token completed.");
+
         if let Some(bc) = &mut debug_data.breakpoint_callback {
             (*bc)(StoppedReasonEnum::Complete);
+            info!("debug_thread send complete to breakpoint_callback.");
         };
+        info!("<< debug_interpreter debug_thread function");
     }
 
     // // run means user click "continue" and only stopped when breakpoint/complete
@@ -256,11 +292,26 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
     }
 }
 
+impl<'a> Drop for BrainfuckDebugInterpreter<'a> {
+    fn drop(&mut self) {
+        self.should_stop.store(true, Ordering::Relaxed);
+        if let Some(interpreter_debug_tx) = &self.interpreter_debug_tx {
+            interpreter_debug_tx.send(StartReasonEnum::Continue).ok();
+        }
+
+        let thread = mem::replace(&mut self.thread, None);
+        if let Some(thread) = thread {
+            thread.join().ok();
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum StoppedReasonEnum {
     Breakpoint,
     Step,
     Complete,
+    Terminated,
 }
 
 pub enum OutputCategoryEnum {
