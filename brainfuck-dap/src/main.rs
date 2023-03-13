@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    env, fs,
     mem::transmute,
     sync::{Arc, Mutex},
 };
@@ -343,8 +343,20 @@ struct DisconnectRequestArguments {
 /* ----------------- main ----------------- */
 
 fn main() {
+    let log_level = match env::var("DAP_LOG_LEVEL") {
+        Ok(l) => match l.as_str() {
+            "OFF" => LevelFilter::Off,
+            "ERROR" => LevelFilter::Error,
+            "WARN" => LevelFilter::Warn,
+            "INFO" => LevelFilter::Info,
+            "DEBUG" => LevelFilter::Debug,
+            "TRACE" => LevelFilter::Trace,
+            _ => LevelFilter::Debug,
+        },
+        Err(_) => LevelFilter::Debug,
+    };
     CombinedLogger::init(vec![WriteLogger::new(
-        LevelFilter::Debug,
+        log_level,
         Config::default(),
         File::create("brainfuck_interpreter.log").unwrap(),
     )])
@@ -418,9 +430,7 @@ fn test_launch_request() {
     let child_stdin = child.stdin.as_mut().unwrap();
     let child_stdout = child.stdout.as_mut().unwrap();
     let launch_request = "Content-Length: 233\r\n\r\n{\"command\": \"launch\",\"arguments\": {\"name\": \"Brainfuck-Debug\",\"type\": \"brainfuck\",\"request\": \"launch\",\"program\":\"../test.bf\",\"__configurationTarget\": 6,\"__sessionId\": \"36201e43-539a-4fd6-beb8-5e0bc2b18abe\"},\"type\": \"request\",\"seq\": 2}\r\n";
-    child_stdin
-        .write_all(launch_request.as_bytes())
-        .unwrap();
+    child_stdin.write_all(launch_request.as_bytes()).unwrap();
     // Close stdin to finish and avoid indefinite blocking
     drop(child_stdin);
     thread::sleep(time::Duration::from_secs(5));
