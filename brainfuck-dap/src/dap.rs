@@ -1,6 +1,7 @@
 use core::time;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use simplelog::*;
 use std::collections::HashMap;
 use std::io::BufRead;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -52,12 +53,13 @@ impl<'a, TUserData> DapService<'a, TUserData> {
     pub fn start(&mut self) {
         // io thread to dap thread
         let (i2d_tx, i2d_rx) = mpsc::channel();
-
+        info!("dap start: build i2d channel");
         thread::spawn(move || {
             Self::io_thread(i2d_tx);
         });
-
+        info!("dap start: start io_thread");
         self.dap_thread(i2d_rx);
+        info!("dap start: start dap_thread");
     }
 
     fn io_thread(i2d_tx: Sender<Message>) {
@@ -65,24 +67,30 @@ impl<'a, TUserData> DapService<'a, TUserData> {
 
         loop {
             stdin_cache.stdin_read_until("Content-Length: ");
+            debug!("io_thread: get request head");
             let len = stdin_cache.stdin_read_until("\r\n\r\n");
+            debug!("io_thread: get request \r\n\r\n");
             let len = len.parse::<usize>().unwrap();
-
+            debug!("io_thread: get request body len = {}", len);
             let request = stdin_cache.stdin_read_exact(len);
-
+            debug!("io_thread: get request body");
             i2d_tx.send(request).unwrap();
+            debug!("io_thread: send request to dap_thread");
         }
     }
 
     fn dap_thread(&mut self, i2d_rx: Receiver<Message>) {
         loop {
             if let Ok(io_request) = i2d_rx.try_recv() {
+                info!("dap_thread: receive io_request = {}", io_request);
                 let io_result = self.dealer.process_request(&io_request);
+                info!("dap_thread: after execute, io_result = {}", io_result);
                 print!(
                     "Content-Length: {}\r\n\r\n{}\r\n",
                     io_result.len(),
                     io_result
                 );
+                info!("dap_thread: print complete");
             }
 
             if let Some(event_rx) = &self.event_rx {
@@ -276,7 +284,13 @@ impl<'a, TUserData> Dealer<'a, TUserData> {
                     body: None,
                 },
             };
-            serde_json::to_string(&result).unwrap()
+
+            let result_str = serde_json::to_string(&result).unwrap();
+            info!(
+                "dap register: request = {}, response = {}",
+                request_str, result_str
+            );
+            result_str
         };
 
         self.function_map.insert(fn_name, Box::new(new_function));
@@ -288,7 +302,7 @@ impl<'a, TUserData> Dealer<'a, TUserData> {
         match handler {
             Some(h) => h(&mut self.user_data, io_request.to_string()),
             None => {
-                let errorResponse = DAPResponseWithBody::<()> {
+                let error_response = DAPResponseWithBody::<()> {
                     response_type: "response".to_string(),
                     request_seq: dap_request.seq.clone(),
                     success: false,
@@ -296,7 +310,7 @@ impl<'a, TUserData> Dealer<'a, TUserData> {
                     message: None,
                     body: None,
                 };
-                serde_json::to_string(&errorResponse).unwrap()
+                serde_json::to_string(&error_response).unwrap()
             },
         }
     }

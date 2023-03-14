@@ -1,6 +1,6 @@
 use std::str::Chars;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct TokenGroup {
     pub token_group: Vec<Token>,
 }

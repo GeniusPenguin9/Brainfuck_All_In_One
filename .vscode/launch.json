@@ -12,7 +12,7 @@
 			"type": "lldb",
 			"request": "launch",
 			"name": "Launch dap",
-			"program": "${workspaceFolder}/brainfuck-dap/target/debug/brainfuck-dap.exe",
+			"program": "${workspaceFolder}/target/debug/brainfuck-dap.exe",
 			"args": [],
 			"cwd": "${workspaceFolder}"
 		},
@@ -20,7 +20,7 @@
 			"type": "lldb",
 			"request": "attach",
 			"name": "Attach",
-			"program": "${workspaceFolder}/brainfuck-lsp/target/debug/brainfuck-lsp.exe"
+			"program": "${workspaceFolder}/target/debug/brainfuck-dap.exe"
 		},
 		{
 			"type": "extensionHost",

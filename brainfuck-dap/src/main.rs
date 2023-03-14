@@ -1,12 +1,14 @@
 use std::{
-    fs,
+    env, fs,
     mem::transmute,
     sync::{Arc, Mutex},
 };
 
-use brainfuck_interpreter::{BrainfuckInterpreter, StoppedReasonEnum};
+use brainfuck_interpreter::{BrainfuckDebugInterpreter, OutputCategoryEnum, StoppedReasonEnum};
 use dap::{DapService, EventPoster};
 use serde::{Deserialize, Serialize};
+use simplelog::*;
+use std::fs::File;
 mod dap;
 
 struct UserData<'a> {
@@ -17,7 +19,7 @@ struct UserData<'a> {
 
 enum RunningState<'a> {
     Idle,
-    Running(BrainfuckInterpreter<'a>),
+    Running(BrainfuckDebugInterpreter<'a>),
 }
 
 impl<'a> UserData<'a> {
@@ -46,41 +48,64 @@ impl<'a> UserData<'a> {
     }
 
     fn launch(&mut self, launch_request_args: LaunchRequestArguments) -> Result<(), String> {
-        let event_poster = self.event_poster.clone();
+        info!(">> brainfuck-dap/main launch function");
+        let mut event_poster = self.event_poster.clone();
         let callback_runtime = self.runtime.clone();
         let breakpoint_callback = move |reason: StoppedReasonEnum| match reason {
-            StoppedReasonEnum::Breakpoint => event_poster.send_event(
+            StoppedReasonEnum::Breakpoint => event_poster.queue_event(
                 &Event::<StoppedEventBody>::new(StoppedEventBodyEnum::Breakpoint),
             ),
             StoppedReasonEnum::Complete => {
                 if let Ok(mut runtime_lock) = callback_runtime.lock() {
                     *runtime_lock = RunningState::Idle;
                 };
-                event_poster.send_event(&Event::<ExitedEventBody>::new(0));
+                event_poster.queue_event(&Event::<TerminatedEventBody>::new());
+                event_poster.queue_event(&Event::<ExitedEventBody>::new(0));
             }
-            StoppedReasonEnum::Step => {
-                event_poster.send_event(&Event::<StoppedEventBody>::new(StoppedEventBodyEnum::Step))
+            StoppedReasonEnum::Terminated => {
+                if let Ok(mut runtime_lock) = callback_runtime.lock() {
+                    *runtime_lock = RunningState::Idle;
+                };
+                event_poster.queue_event(&Event::<TerminatedEventBody>::new());
+                event_poster.queue_event(&Event::<ExitedEventBody>::new(-1));
             }
+            StoppedReasonEnum::Step => event_poster
+                .queue_event(&Event::<StoppedEventBody>::new(StoppedEventBodyEnum::Step)),
             _ => (),
         };
+
+        let mut event_poster = self.event_poster.clone();
+        let output_callback =
+            move |output_category: OutputCategoryEnum, output: String| match output_category {
+                OutputCategoryEnum::Console => event_poster.queue_event(
+                    &Event::<OutputEventBody>::new("console".to_string(), output),
+                ),
+                OutputCategoryEnum::StdOut => event_poster
+                    .queue_event(&Event::<OutputEventBody>::new("stdout".to_string(), output)),
+            };
 
         if let Ok(mut current_runtime_lock) = self.runtime.lock() {
             match *current_runtime_lock {
                 RunningState::Idle => {
-                    let source_content =
-                        fs::read_to_string(launch_request_args.source.path.unwrap())
-                            .expect("Should have been able to read the file");
-                    let mut brainfuck_interpreter = BrainfuckInterpreter::new(source_content, true);
+                    let source_content = fs::read_to_string(launch_request_args.program)
+                        .expect("Should have been able to read the file");
+                    let mut brainfuck_debug_interpreter =
+                        BrainfuckDebugInterpreter::new(source_content);
 
-                    brainfuck_interpreter.set_breakpoint_callback(Box::new(breakpoint_callback));
-                    brainfuck_interpreter.set_breakpoints(&self.breakpoint_lines);
-                    brainfuck_interpreter.launch();
+                    brainfuck_debug_interpreter.set_breakpoints(&self.breakpoint_lines);
+                    info!("brainfuck_debug_interpreter init completed.");
+                    brainfuck_debug_interpreter.launch(
+                        Some(Box::new(breakpoint_callback)),
+                        Some(Box::new(output_callback)),
+                    );
+                    info!("brainfuck_debug_interpreter launch completed.");
 
-                    *current_runtime_lock = RunningState::Running(brainfuck_interpreter);
+                    *current_runtime_lock = RunningState::Running(brainfuck_debug_interpreter);
                 }
                 RunningState::Running(_) => todo!(), //panic??
             }
         };
+        info!("<< brainfuck-dap/main launch function. Successful.");
         Ok(())
     }
 
@@ -89,7 +114,7 @@ impl<'a> UserData<'a> {
             match &mut *current_runtime_lock {
                 RunningState::Idle => todo!(),
                 RunningState::Running(brainfuck_interpreter) => {
-                    brainfuck_interpreter.run();
+                    brainfuck_interpreter.run()?;
                 }
             }
         };
@@ -239,6 +264,15 @@ enum StoppedEventBodyEnum {
 struct ExitedEventBody {
     exit_code: i32,
 }
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OutputEventBody {
+    category: String,
+    output: String,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminatedEventBody {}
 
 impl Event<StoppedEventBody> {
     fn new(reason: StoppedEventBodyEnum) -> Event<StoppedEventBody> {
@@ -260,11 +294,31 @@ impl Event<ExitedEventBody> {
     }
 }
 
+impl Event<OutputEventBody> {
+    fn new(category: String, output: String) -> Event<OutputEventBody> {
+        Event {
+            event_type: "event".to_string(),
+            event: "output".to_string(),
+            body: OutputEventBody { category, output },
+        }
+    }
+}
+
+impl Event<TerminatedEventBody> {
+    fn new() -> Event<TerminatedEventBody> {
+        Event {
+            event_type: "event".to_string(),
+            event: "terminated".to_string(),
+            body: TerminatedEventBody {},
+        }
+    }
+}
+
 /* ----------------- launch ----------------- */
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LaunchRequestArguments {
-    source: Source,
+    program: String,
 }
 
 /* ----------------- continue ----------------- */
@@ -289,6 +343,25 @@ struct DisconnectRequestArguments {
 /* ----------------- main ----------------- */
 
 fn main() {
+    let log_level = match env::var("DAP_LOG_LEVEL") {
+        Ok(l) => match l.as_str() {
+            "OFF" => LevelFilter::Off,
+            "ERROR" => LevelFilter::Error,
+            "WARN" => LevelFilter::Warn,
+            "INFO" => LevelFilter::Info,
+            "DEBUG" => LevelFilter::Debug,
+            "TRACE" => LevelFilter::Trace,
+            _ => LevelFilter::Debug,
+        },
+        Err(_) => LevelFilter::Debug,
+    };
+    CombinedLogger::init(vec![WriteLogger::new(
+        log_level,
+        Config::default(),
+        File::create("brainfuck_interpreter.log").unwrap(),
+    )])
+    .unwrap();
+    info!(">> brainfuck-dap main");
     let mut dap_service = DapService::new_with_poster(|event_poster| UserData {
         event_poster,
         runtime: Arc::new(Mutex::new(RunningState::Idle)),
@@ -305,6 +378,7 @@ fn main() {
     .register("disconnect".to_string(), Box::new(UserData::disconnect))
     .build();
     dap_service.start();
+    info!("<< brainfuck-dap main");
 }
 
 /* ----------------- test ----------------- */
@@ -337,7 +411,38 @@ fn test_initialization_request() {
     child.kill().unwrap();
 
     let actual = String::from_utf8(read_buf.to_vec()).unwrap();
+    println!("Get actual response = {}", actual);
     assert!(actual.contains("Content-Length: 129\r\n\r\n{\"type\":\"response\",\"request_seq\":153,\"success\":true,\"command\":\"initialize\",\"body\":{\"supportsSingleThreadExecutionRequests\":true}}\r\nContent-Length: 38\r\n\r\n{\"type\":\"event\",\"event\":\"initialized\"}"));
+}
+
+#[test]
+fn test_launch_request() {
+    use std::io::{Read, Write};
+    use std::process::{Command, Stdio};
+    use std::{thread, time};
+
+    let mut child = Command::new("cargo")
+        .args(["run"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed during cargo run");
+
+    let child_stdin = child.stdin.as_mut().unwrap();
+    let child_stdout = child.stdout.as_mut().unwrap();
+    let launch_request = "Content-Length: 233\r\n\r\n{\"command\": \"launch\",\"arguments\": {\"name\": \"Brainfuck-Debug\",\"type\": \"brainfuck\",\"request\": \"launch\",\"program\":\"../test.bf\",\"__configurationTarget\": 6,\"__sessionId\": \"36201e43-539a-4fd6-beb8-5e0bc2b18abe\"},\"type\": \"request\",\"seq\": 2}\r\n";
+    child_stdin.write_all(launch_request.as_bytes()).unwrap();
+    // Close stdin to finish and avoid indefinite blocking
+    drop(child_stdin);
+    thread::sleep(time::Duration::from_secs(5));
+
+    let mut read_buf: [u8; 300] = [0; 300];
+    child_stdout.read(&mut read_buf).unwrap();
+    child.kill().unwrap();
+
+    let actual = String::from_utf8(read_buf.to_vec()).unwrap();
+    println!("Get actual response = {}", actual);
+    assert!(actual.contains("Content-Length: 81\r\n\r\n{\"type\":\"response\",\"request_seq\":2,\"success\":true,\"command\":\"launch\",\"body\":null}"));
 }
 
 #[test]
@@ -366,5 +471,6 @@ fn test_unknown_request() {
     child.kill().unwrap();
 
     let actual = String::from_utf8(read_buf.to_vec()).unwrap();
+    println!("Get actual response = {}", actual);
     assert!(actual.contains("Content-Length: 74\r\n\r\n{\"type\":\"response\",\"request_seq\":1,\"success\":false,\"command\":\"abcdefghij\"}"));
 }

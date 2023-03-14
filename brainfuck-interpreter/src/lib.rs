@@ -1,4 +1,5 @@
+mod autojit;
+mod debug_interpreter;
 mod interpreter;
 mod jit;
-mod autojit;
-pub use interpreter::*;
+pub use debug_interpreter::*;
