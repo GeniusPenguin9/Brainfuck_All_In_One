@@ -1,6 +1,9 @@
 use brainfuck_analyzer::{parse, Position, Range, Token, TokenGroup, TokenType};
 
+use crate::interpreter;
+use crate::jit::IBrainfuckMemory;
 use core::time;
+use simplelog::*;
 use std::borrow::BorrowMut;
 use std::io::Read;
 use std::marker::PhantomData;
@@ -10,9 +13,6 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
 use std::vec;
-use simplelog::*;
-use crate::interpreter;
-use crate::jit::IBrainfuckMemory;
 
 pub struct BrainfuckMemory {
     pub index: usize,
@@ -45,14 +45,16 @@ impl BrainfuckMemory {
 pub struct BrainfuckDebugInterpreter<'a> {
     source_content: String,
     breakpoint_lines: Vec<usize>,
-    interpreter_debug_tx: Option<Sender<StartReasonEnum>>,
+    interpreter_debug_start_tx: Option<Sender<StartReasonEnum>>,
+    interpreter_debug_user_tx: Option<Sender<char>>,
     thread: Option<JoinHandle<()>>,
     phantom_data: PhantomData<&'a ()>,
     should_stop: Arc<AtomicBool>,
 }
 
 pub struct BrainfuckDebugThreadData<'a> {
-    interpreter_debug_rx: Receiver<StartReasonEnum>,
+    interpreter_debug_start_rx: Receiver<StartReasonEnum>,
+    interpreter_debug_user_rx: Receiver<char>,
     breakpoint_callback: Option<Box<dyn FnMut(StoppedReasonEnum) + 'a + Send>>,
     output_callback: Option<Box<dyn FnMut(OutputCategoryEnum, String) + 'a + Send>>,
     should_stop: Arc<AtomicBool>,
@@ -63,7 +65,8 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
         BrainfuckDebugInterpreter {
             source_content,
             breakpoint_lines: Vec::new(),
-            interpreter_debug_tx: None,
+            interpreter_debug_start_tx: None,
+            interpreter_debug_user_tx: None,
             thread: None,
             phantom_data: Default::default(),
             should_stop: Arc::new(AtomicBool::new(false)),
@@ -134,9 +137,29 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
                 // scope.yield_(StoppedReasonEnum::Step);
             }
             TokenType::Input => {
-                brainfuck_memory.memory[brainfuck_memory.index] =
-                    std::io::stdin().bytes().next().unwrap().unwrap();
-                // scope.yield_(StoppedReasonEnum::Step);
+                info!("interpret_token: meet TokenType::Input");
+                // user input -> vsc client -> dap request -> dap -> buffer. Instead of stdin
+                let mut user_input_noticed = false;
+                loop {
+                    if let Ok(input_char) = debug_thread_data.interpreter_debug_user_rx.try_recv() {
+                        debug!("Get `{}` from user input", input_char);
+                        brainfuck_memory.memory[brainfuck_memory.index] = input_char as u8;
+                        break;
+                    } else {
+                        debug!("Cannot get user input");
+                        if user_input_noticed == false {
+                            if let Some(oc) = &mut debug_thread_data.output_callback {
+                                (*oc)(
+                                    OutputCategoryEnum::Console,
+                                    "Waiting for user input".to_string(),
+                                );
+                                user_input_noticed = true;
+                            }
+                        }
+
+                        thread::sleep(time::Duration::from_millis(500));
+                    }
+                }
             }
             TokenType::SubGroup(sg) => {
                 while brainfuck_memory.memory[brainfuck_memory.index] != 0 {
@@ -154,7 +177,7 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
                 if let Some(bc) = &mut debug_thread_data.breakpoint_callback {
                     (*bc)(StoppedReasonEnum::Breakpoint);
                 };
-                if let Ok(start_reason) = debug_thread_data.interpreter_debug_rx.recv() {
+                if let Ok(start_reason) = debug_thread_data.interpreter_debug_start_rx.recv() {
                     match start_reason {
                         StartReasonEnum::Continue => (),
                         StartReasonEnum::Step => todo!(),
@@ -217,11 +240,11 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
         //drop(vec_token);
 
         /*
-         * Why exception: 
-         * default lifetime of callback handler is 'a, equal to `self`. 
+         * Why exception:
+         * default lifetime of callback handler is 'a, equal to `self`.
          * default lifetime of thread is static.
-         * 
-         * Avoid unsafe side effect: 
+         *
+         * Avoid unsafe side effect:
          * impl drop() for self to make sure thread will no longer alive after `self` drop.
          * lifetime of thread: static => 'a
          */
@@ -230,12 +253,15 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
         let oc: Option<Box<dyn FnMut(OutputCategoryEnum, String) + 'static + Send>> =
             unsafe { transmute(output_callback) };
         let token_group = parse_result.parse_token_group;
-        let (interpreter_debug_tx, interpreter_debug_rx) = mpsc::channel();
+        let (interpreter_debug_start_tx, interpreter_debug_start_rx) = mpsc::channel();
+        let (interpreter_debug_user_tx, interpreter_debug_user_rx) = mpsc::channel();
         let should_stop = self.should_stop.clone();
-        self.interpreter_debug_tx = Some(interpreter_debug_tx);
+        self.interpreter_debug_start_tx = Some(interpreter_debug_start_tx);
+        self.interpreter_debug_user_tx = Some(interpreter_debug_user_tx);
         self.thread = Some(thread::spawn(move || {
             let debug_data = BrainfuckDebugThreadData {
-                interpreter_debug_rx,
+                interpreter_debug_start_rx,
+                interpreter_debug_user_rx,
                 breakpoint_callback: bc,
                 output_callback: oc,
                 should_stop,
@@ -268,7 +294,7 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
 
     // // run means user click "continue" and only stopped when breakpoint/complete
     pub fn run(&mut self) -> Result<(), String> {
-        if let Some(interpreter_debug_tx) = &self.interpreter_debug_tx {
+        if let Some(interpreter_debug_tx) = &self.interpreter_debug_start_tx {
             if let Err(_) = interpreter_debug_tx.send(StartReasonEnum::Continue) {
                 return Err("Debug program already finished.".to_string());
             }
@@ -290,12 +316,20 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
         //         }
         //     }
     }
+
+    pub fn evaluate(&mut self, input: String) {
+        if let Some(interpreter_debug_user_tx) = &self.interpreter_debug_user_tx {
+            for c in input.chars() {
+                interpreter_debug_user_tx.send(c).ok();
+            }
+        }
+    }
 }
 
 impl<'a> Drop for BrainfuckDebugInterpreter<'a> {
     fn drop(&mut self) {
         self.should_stop.store(true, Ordering::Relaxed);
-        if let Some(interpreter_debug_tx) = &self.interpreter_debug_tx {
+        if let Some(interpreter_debug_tx) = &self.interpreter_debug_start_tx {
             interpreter_debug_tx.send(StartReasonEnum::Continue).ok();
         }
 

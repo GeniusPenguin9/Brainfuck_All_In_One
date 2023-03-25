@@ -1,5 +1,6 @@
 use std::{
-    env, fs,
+    env::{self, current_dir},
+    fs,
     mem::transmute,
     sync::{Arc, Mutex},
 };
@@ -28,6 +29,13 @@ impl<'a> UserData<'a> {
         _initialize_requst_args: InitializeRequestArguments,
     ) -> Result<Capabilities, String> {
         self.event_poster.queue_event(&InitializeEvent::new());
+
+        let mut event_poster = self.event_poster.clone();
+        let initialize_message = format!("Current working dictionary = {:?}", current_dir());
+        event_poster.queue_event(&Event::<OutputEventBody>::new(
+            "console".to_string(),
+            initialize_message,
+        ));
 
         Ok(Capabilities {
             supports_single_thread_execution_requests: Some(true),
@@ -142,6 +150,19 @@ impl<'a> UserData<'a> {
                 RunningState::Idle => todo!(),
                 RunningState::Running(_) => {
                     *current_runtime_lock = RunningState::Idle;
+                }
+            }
+        };
+        Ok(())
+    }
+
+    fn evaluate(&mut self, evaluate_request_args: EvaluateRequestArguments) -> Result<(), String> {
+        info!(">> receive user input evaluate");
+        if let Ok(mut current_runtime_lock) = self.runtime.lock() {
+            match &mut *current_runtime_lock {
+                RunningState::Idle => (),
+                RunningState::Running(brainfuck_interpreter) => {
+                    brainfuck_interpreter.evaluate(evaluate_request_args.expression);
                 }
             }
         };
@@ -340,6 +361,12 @@ struct NextRequestArguments {
 struct DisconnectRequestArguments {
     restart: Option<bool>,
 }
+/* ----------------- evaluate ----------------- */
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EvaluateRequestArguments {
+    expression: String,
+}
 /* ----------------- main ----------------- */
 
 fn main() {
@@ -376,6 +403,7 @@ fn main() {
     .register("continue".to_string(), Box::new(UserData::run))
     .register("next".to_string(), Box::new(UserData::next))
     .register("disconnect".to_string(), Box::new(UserData::disconnect))
+    .register("evaluate".to_string(), Box::new(UserData::evaluate))
     .build();
     dap_service.start();
     info!("<< brainfuck-dap main");
