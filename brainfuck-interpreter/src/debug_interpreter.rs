@@ -137,7 +137,7 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
                 // scope.yield_(StoppedReasonEnum::Step);
             }
             TokenType::Input => {
-                info!("interpret_token: meet TokenType::Input");
+                debug!("interpret_token: meet TokenType::Input");
                 // user input -> vsc client -> dap request -> dap -> buffer. Instead of stdin
                 let mut user_input_noticed = false;
                 loop {
@@ -328,15 +328,19 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
 
 impl<'a> Drop for BrainfuckDebugInterpreter<'a> {
     fn drop(&mut self) {
+        debug!(">> BrainfuckDebugInterpreter.drop()");
         self.should_stop.store(true, Ordering::Relaxed);
         if let Some(interpreter_debug_tx) = &self.interpreter_debug_start_tx {
             interpreter_debug_tx.send(StartReasonEnum::Continue).ok();
         }
+        debug!("BrainfuckDebugInterpreter notice debug_thread to stop.");
 
         let thread = mem::replace(&mut self.thread, None);
         if let Some(thread) = thread {
             thread.join().ok();
+            debug!("BrainfuckDebugInterpreter debug_thread drop.");
         }
+        debug!("<< BrainfuckDebugInterpreter.drop()");
     }
 }
 

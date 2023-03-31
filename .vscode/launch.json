@@ -6,7 +6,7 @@
 			"type": "lldb",
 			"request": "attach",
 			"name": "Attach dap",
-			"program": "${workspaceFolder}/brainfuck-dap/target/debug/brainfuck-dap.exe"
+			"program": "${workspaceFolder}/vscode-brainfuck/server/windows/brainfuck-dap.exe"
 		},
 		{
 			"type": "lldb",
