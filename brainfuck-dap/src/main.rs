@@ -181,6 +181,8 @@ impl<'a> UserData<'a> {
         &mut self,
         _disconnect_request_args: DisconnectRequestArguments,
     ) -> Result<(), String> {
+        // Precondition: not support `attach` request in brainfuck-dap
+        // 1. The disconnect request asks the debug adapter to disconnect from the debuggee (thus ending the debug session) 
         if let Ok(mut current_runtime_lock) = self.runtime.lock() {
             match &mut *current_runtime_lock {
                 RunningState::Idle => todo!(),
@@ -191,7 +193,9 @@ impl<'a> UserData<'a> {
                 RunningState::Terminated(_) => (),
             }
         };
-        Ok(())
+
+        // 2. The disconnect request asks the debug adapter to shut down itself (the debug adapter).
+        Err("Disconnect".to_string())
     }
 
     fn evaluate(&mut self, evaluate_request_args: EvaluateRequestArguments) -> Result<(), String> {

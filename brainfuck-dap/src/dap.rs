@@ -85,6 +85,12 @@ impl<'a, TUserData> DapService<'a, TUserData> {
                 info!("dap_thread: receive io_request = {}", io_request);
                 let io_result = self.dealer.process_request(&io_request);
                 info!("dap_thread: after execute, io_result = {}", io_result);
+
+                if io_result.eq("Disconnect") {
+                    info!("dap_thread: Ready to disconnect");
+                    break;
+                }
+
                 print!(
                     "Content-Length: {}\r\n\r\n{}\r\n",
                     io_result.len(),
@@ -266,31 +272,47 @@ impl<'a, TUserData> Dealer<'a, TUserData> {
             let request_with_arg: DAPRequestWithArguments<TArguments> =
                 serde_json::from_str(&request_str).unwrap();
 
-            let result = match fn_handler(user_data, request_with_arg.arguments) {
-                Ok(success_body) => DAPResponseWithBody::<TResponseBody> {
-                    response_type: "response".to_string(),
-                    request_seq: request_with_arg.seq,
-                    success: true,
-                    command: request_with_arg.command,
-                    message: None,
-                    body: Some(success_body),
-                },
-                Err(err) => DAPResponseWithBody::<TResponseBody> {
-                    response_type: "response".to_string(),
-                    request_seq: request_with_arg.seq,
-                    success: false,
-                    command: request_with_arg.command,
-                    message: Some(err),
-                    body: None,
-                },
-            };
-
-            let result_str = serde_json::to_string(&result).unwrap();
-            info!(
-                "dap register: request = {}, response = {}",
-                request_str, result_str
-            );
-            result_str
+            match fn_handler(user_data, request_with_arg.arguments) {
+                Ok(success_body) => {
+                    let result = DAPResponseWithBody::<TResponseBody> {
+                        response_type: "response".to_string(),
+                        request_seq: request_with_arg.seq,
+                        success: true,
+                        command: request_with_arg.command,
+                        message: None,
+                        body: Some(success_body),
+                    };
+                    let result_str = serde_json::to_string(&result).unwrap();
+                    info!(
+                        "dap register: request = {}, response = {}",
+                        request_str, result_str
+                    );
+                    result_str
+                }
+                Err(err) if err.eq("Disconnect") => {
+                    info!(
+                        "dap register: request = {}, response = {}",
+                        request_str, err
+                    );
+                    err
+                }
+                Err(err) => {
+                    let result = DAPResponseWithBody::<TResponseBody> {
+                        response_type: "response".to_string(),
+                        request_seq: request_with_arg.seq,
+                        success: false,
+                        command: request_with_arg.command,
+                        message: Some(err),
+                        body: None,
+                    };
+                    let result_str = serde_json::to_string(&result).unwrap();
+                    info!(
+                        "dap register: request = {}, response = {}",
+                        request_str, result_str
+                    );
+                    result_str
+                }
+            }
         };
 
         self.function_map.insert(fn_name, Box::new(new_function));
@@ -311,7 +333,7 @@ impl<'a, TUserData> Dealer<'a, TUserData> {
                     body: None,
                 };
                 serde_json::to_string(&error_response).unwrap()
-            },
+            }
         }
     }
 }
