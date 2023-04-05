@@ -182,7 +182,7 @@ impl<'a> UserData<'a> {
         _disconnect_request_args: DisconnectRequestArguments,
     ) -> Result<(), String> {
         // Precondition: not support `attach` request in brainfuck-dap
-        // 1. The disconnect request asks the debug adapter to disconnect from the debuggee (thus ending the debug session) 
+        // 1. The disconnect request asks the debug adapter to disconnect from the debuggee (thus ending the debug session)
         if let Ok(mut current_runtime_lock) = self.runtime.lock() {
             match &mut *current_runtime_lock {
                 RunningState::Idle => todo!(),
@@ -196,6 +196,24 @@ impl<'a> UserData<'a> {
 
         // 2. The disconnect request asks the debug adapter to shut down itself (the debug adapter).
         Err("Disconnect".to_string())
+    }
+
+    fn terminate(
+        &mut self,
+        _terminate_request_args: TerminateRequestArguments,
+    ) -> Result<(), String> {
+        // The terminate request is sent from the client to the debug adapter in order to shut down the debuggee gracefully.
+        if let Ok(mut current_runtime_lock) = self.runtime.lock() {
+            match &mut *current_runtime_lock {
+                RunningState::Idle => (),
+                RunningState::Running(brainfuck_interpreter) => {
+                    let interpreter = mem::replace(brainfuck_interpreter, None);
+                    *current_runtime_lock = RunningState::Terminated(interpreter.unwrap());
+                }
+                RunningState::Terminated(_) => (),
+            }
+        };
+        Ok(())
     }
 
     fn evaluate(&mut self, evaluate_request_args: EvaluateRequestArguments) -> Result<(), String> {
@@ -407,6 +425,12 @@ struct NextRequestArguments {
 struct DisconnectRequestArguments {
     restart: Option<bool>,
 }
+/* ----------------- terminate ----------------- */
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminateRequestArguments {
+    restart: Option<bool>,
+}
 /* ----------------- evaluate ----------------- */
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -449,6 +473,7 @@ fn main() {
     .register("continue".to_string(), Box::new(UserData::run))
     .register("next".to_string(), Box::new(UserData::next))
     .register("disconnect".to_string(), Box::new(UserData::disconnect))
+    .register("terminate".to_string(), Box::new(UserData::terminate))
     .register("evaluate".to_string(), Box::new(UserData::evaluate))
     .build();
     dap_service.start();
