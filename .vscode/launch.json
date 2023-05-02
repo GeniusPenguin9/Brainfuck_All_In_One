@@ -17,12 +17,6 @@
 			"cwd": "${workspaceFolder}"
 		},
 		{
-			"type": "lldb",
-			"request": "attach",
-			"name": "Attach",
-			"program": "${workspaceFolder}/target/debug/brainfuck-dap.exe"
-		},
-		{
 			"type": "extensionHost",
 			"request": "launch",
 			"name": "Launch Client",
