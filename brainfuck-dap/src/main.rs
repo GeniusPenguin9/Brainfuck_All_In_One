@@ -5,7 +5,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use brainfuck_interpreter::{BrainfuckDebugInterpreter, OutputCategoryEnum, StoppedReasonEnum};
+use brainfuck_interpreter::{
+    BrainfuckDebugInterpreter, OutputCategoryEnum, Position, StoppedReasonEnum,
+};
 use dap::{DapService, EventPoster};
 use serde::{Deserialize, Serialize};
 use simplelog::*;
@@ -15,7 +17,7 @@ mod dap;
 struct UserData<'a> {
     event_poster: EventPoster,
     runtime: Arc<Mutex<RunningState<'a>>>,
-    breakpoint_lines: Vec<usize>,
+    breakpoints: Vec<Position>,
 }
 
 enum RunningState<'a> {
@@ -26,6 +28,15 @@ enum RunningState<'a> {
 }
 
 impl<'a> UserData<'a> {
+    fn state_error(&self, event_poster: &mut EventPoster, state: &str, command: &str) {
+        error!("not expecting {} in state {}!", command, state);
+        event_poster.queue_event(&Event::<OutputEventBody>::new(
+            "console".to_string(),
+            format!("not expecting {} in state {}!", command, state),
+        ));
+        panic!("not expecting {} in state {}!", command, state);
+    }
+
     fn initialize(
         &mut self,
         _initialize_requst_args: Option<InitializeRequestArguments>,
@@ -33,7 +44,10 @@ impl<'a> UserData<'a> {
         self.event_poster.queue_event(&InitializeEvent::new());
 
         let mut event_poster = self.event_poster.clone();
-        let initialize_message = format!("Current working dictionary = {:?}", current_dir());
+        let initialize_message = format!(
+            "Current working dictionary = {:?}\n",
+            current_dir().unwrap()
+        );
         event_poster.queue_event(&Event::<OutputEventBody>::new(
             "console".to_string(),
             initialize_message,
@@ -49,43 +63,73 @@ impl<'a> UserData<'a> {
         &mut self,
         set_breakpoints_request_args: Option<SetBreakpointsArguments>,
     ) -> Result<Breakpoints, String> {
-        let breakpoint_lines = match set_breakpoints_request_args.unwrap().breakpoints {
-            Some(source_breakpoint_vec) => source_breakpoint_vec.iter().map(|b| b.line).collect(),
-            None => Vec::new(),
+        info!(">> brainfuck-dap/main set_breakpoints function");
+        let mut result = vec![];
+        let mut event_poster = self.event_poster.clone();
+
+        if let Ok(mut current_runtime_lock) = self.runtime.lock() {
+            match &mut *current_runtime_lock {
+                RunningState::Idle => {
+                    self.state_error(&mut event_poster, "Idle", "set_breakpoints")
+                }
+                RunningState::LaunchReady(brainfuck_interpreter) => {
+                    // interpreter.clear_breakpoints();
+                    result = set_breakpoints_impl(
+                        set_breakpoints_request_args,
+                        brainfuck_interpreter.as_mut().unwrap(),
+                    );
+                }
+                RunningState::Running(brainfuck_interpreter) => {
+                    if let Some(interpreter) = brainfuck_interpreter.as_mut() {
+                        interpreter.clear_breakpoints();
+                        result = set_breakpoints_impl(set_breakpoints_request_args, interpreter);
+                        interpreter.update_runtime_breakpoints();
+                    }
+                }
+                RunningState::Terminated(_) => {
+                    self.state_error(&mut event_poster, "Terminated", "set_breakpoints")
+                }
+            }
         };
-        let breakpoint_len = breakpoint_lines.len();
-        self.breakpoint_lines = breakpoint_lines;
+        info!("<< brainfuck-dap/main set_breakpoints function. Successful.");
         Ok(Breakpoints {
-            breakpoints: vec![Breakpoint { verified: true }; breakpoint_len],
+            breakpoints: result,
         })
     }
 
-    fn launch(&mut self, launch_request_args: Option<LaunchRequestArguments>) -> Result<(), String> {
+    fn launch(
+        &mut self,
+        launch_request_args: Option<LaunchRequestArguments>,
+    ) -> Result<(), String> {
         info!(">> brainfuck-dap/main launch function");
-      
+        let mut event_poster = self.event_poster.clone();
+
         if let Ok(mut current_runtime_lock) = self.runtime.lock() {
             match *current_runtime_lock {
                 RunningState::Idle => {
-                    let source_content = fs::read_to_string(launch_request_args.unwrap().program)
-                        .expect("Should have been able to read the file");
-                    let mut brainfuck_debug_interpreter =
-                        BrainfuckDebugInterpreter::new(source_content);
+                    let mut brainfuck_debug_interpreter = BrainfuckDebugInterpreter::from_file(
+                        &launch_request_args.unwrap().program,
+                    )?;
 
-                    brainfuck_debug_interpreter.set_breakpoints(&self.breakpoint_lines);
+                    brainfuck_debug_interpreter.clear_breakpoints();
                     info!("brainfuck_debug_interpreter init completed.");
-                  
+
                     *current_runtime_lock =
                         RunningState::LaunchReady(Some(brainfuck_debug_interpreter));
                 }
-                RunningState::LaunchReady(_) => todo!(), //panic??
-                RunningState::Running(_) => todo!(),     //panic??
+                RunningState::LaunchReady(_) => {
+                    self.state_error(&mut event_poster, "LaunchReady", "launch")
+                }
+                RunningState::Running(_) => {
+                    self.state_error(&mut event_poster, "Running", "launch")
+                }
                 RunningState::Terminated(_) => {
                     let source_content = fs::read_to_string(launch_request_args.unwrap().program)
                         .expect("Should have been able to read the file");
                     let mut brainfuck_debug_interpreter =
                         BrainfuckDebugInterpreter::new(source_content);
 
-                    brainfuck_debug_interpreter.set_breakpoints(&self.breakpoint_lines);
+                    brainfuck_debug_interpreter.clear_breakpoints();
                     info!("brainfuck_debug_interpreter init completed.");
 
                     *current_runtime_lock =
@@ -104,44 +148,63 @@ impl<'a> UserData<'a> {
         info!(">> brainfuck-dap/main configuration_done function");
         let mut event_poster = self.event_poster.clone();
         let callback_runtime = self.runtime.clone();
-        let breakpoint_callback = move |reason: StoppedReasonEnum| {
-            info!(">> Breakpoint callback with reasone = {:?}", reason);
-            match reason {
-                StoppedReasonEnum::Breakpoint => event_poster.queue_event(
-                    &Event::<StoppedEventBody>::new(StoppedEventBodyEnum::Breakpoint),
-                ),
-                StoppedReasonEnum::Complete => {
-                    if let Ok(mut runtime_lock) = callback_runtime.lock() {
-                        match &mut *runtime_lock {
-                            RunningState::Running(brainfuck_interpreter) => {
-                                let interpreter = mem::replace(brainfuck_interpreter, None);
-                                *runtime_lock = RunningState::Terminated(interpreter.unwrap());
-                            }
-                            _ => (),
+        let breakpoint_callback =
+            move |reason: StoppedReasonEnum, pos: Option<Position>, bpid: Option<usize>| {
+                info!(">> Breakpoint callback with reasone = {:?}", reason);
+                match reason {
+                    StoppedReasonEnum::Breakpoint => {
+                        event_poster.queue_event(&Event::<StoppedEventBody>::new(
+                            StoppedEventBodyEnum::Breakpoint,
+                            "Paused on breakpoint".to_string(),
+                            bpid,
+                        ));
+                        event_poster.queue_event(&Event::<OutputEventBody>::new(
+                            "console".to_string(),
+                            format!(
+                                "paused on breakpoint line {}, col {}\n",
+                                pos.unwrap_or_default().line,
+                                pos.unwrap_or_default().character
+                            ),
+                        ));
+                    }
+                    StoppedReasonEnum::Complete => {
+                        if let Ok(mut runtime_lock) = callback_runtime.lock() {
+                            match &mut *runtime_lock {
+                                RunningState::Running(brainfuck_interpreter) => {
+                                    let interpreter = mem::replace(brainfuck_interpreter, None);
+                                    *runtime_lock = RunningState::Terminated(interpreter.unwrap());
+                                }
+                                _ => (),
+                            };
                         };
-                    };
-                    event_poster.queue_event(&Event::<TerminatedEventBody>::new());
-                    event_poster.queue_event(&Event::<ExitedEventBody>::new(0));
-                }
-                StoppedReasonEnum::Terminated => {
-                    if let Ok(mut runtime_lock) = callback_runtime.lock() {
-                        match &mut *runtime_lock {
-                            RunningState::Running(brainfuck_interpreter) => {
-                                let interpreter = mem::replace(brainfuck_interpreter, None);
-                                *runtime_lock = RunningState::Terminated(interpreter.unwrap());
-                            }
-                            _ => (),
+                        event_poster.queue_event(&Event::<TerminatedEventBody>::new());
+                        event_poster.queue_event(&Event::<ExitedEventBody>::new(0));
+                    }
+                    StoppedReasonEnum::Terminated => {
+                        if let Ok(mut runtime_lock) = callback_runtime.lock() {
+                            match &mut *runtime_lock {
+                                RunningState::Running(brainfuck_interpreter) => {
+                                    let interpreter = mem::replace(brainfuck_interpreter, None);
+                                    *runtime_lock = RunningState::Terminated(interpreter.unwrap());
+                                }
+                                _ => (),
+                            };
                         };
-                    };
-                    event_poster.queue_event(&Event::<TerminatedEventBody>::new());
-                    event_poster.queue_event(&Event::<ExitedEventBody>::new(-1));
-                }
-                StoppedReasonEnum::Step => event_poster
-                    .queue_event(&Event::<StoppedEventBody>::new(StoppedEventBodyEnum::Step)),
+                        event_poster.queue_event(&Event::<TerminatedEventBody>::new());
+                        event_poster.queue_event(&Event::<ExitedEventBody>::new(-1));
+                    }
+                    StoppedReasonEnum::Step => {
+                        event_poster.queue_event(&Event::<StoppedEventBody>::new(
+                            StoppedEventBodyEnum::Step,
+                            "Paused On Step".to_string(),
+                            None,
+                        ))
+                    }
+                };
             };
-        };
 
         let mut event_poster = self.event_poster.clone();
+        let mut event_poster2 = self.event_poster.clone();
         let output_callback =
             move |output_category: OutputCategoryEnum, output: String| match output_category {
                 OutputCategoryEnum::Console => event_poster.queue_event(
@@ -153,7 +216,9 @@ impl<'a> UserData<'a> {
 
         if let Ok(mut current_runtime_lock) = self.runtime.lock() {
             match &mut *current_runtime_lock {
-                RunningState::Idle => (),
+                RunningState::Idle => {
+                    self.state_error(&mut event_poster2, "Idle", "configuration_done")
+                }
                 RunningState::LaunchReady(brainfuck_interpreter) => {
                     let interpreter = mem::replace(brainfuck_interpreter, None);
                     if let Some(mut interpreter) = interpreter {
@@ -166,36 +231,53 @@ impl<'a> UserData<'a> {
                         *current_runtime_lock = RunningState::Running(Some(interpreter));
                     }
                 }
-                RunningState::Running(_) => (),
-                RunningState::Terminated(_) => (),
+                RunningState::Running(_) => {
+                    self.state_error(&mut event_poster2, "Running", "configuration_done")
+                }
+                RunningState::Terminated(_) => {
+                    self.state_error(&mut event_poster2, "Terminated", "configuration_done")
+                }
             }
         };
         Ok(())
     }
 
-    fn run(&mut self, _continue_request_args: Option<ContinueRequestArguments>) -> Result<(), String> {
+    fn run(
+        &mut self,
+        _continue_request_args: Option<ContinueRequestArguments>,
+    ) -> Result<(), String> {
+        let mut event_poster = self.event_poster.clone();
         if let Ok(mut current_runtime_lock) = self.runtime.lock() {
             match &mut *current_runtime_lock {
-                RunningState::Idle => todo!(),
-                RunningState::LaunchReady(_) => todo!(),
+                RunningState::Idle => self.state_error(&mut event_poster, "Idle", "run"),
+                RunningState::LaunchReady(_) => {
+                    self.state_error(&mut event_poster, "LaunchReady", "run")
+                }
                 RunningState::Running(brainfuck_interpreter) => {
                     brainfuck_interpreter.as_mut().unwrap().run()?;
                 }
-                RunningState::Terminated(_) => todo!(),
+                RunningState::Terminated(_) => {
+                    self.state_error(&mut event_poster, "Terminated", "run")
+                }
             }
         };
         Ok(())
     }
 
     fn next(&mut self, _next_request_args: Option<NextRequestArguments>) -> Result<(), String> {
+        let mut event_poster = self.event_poster.clone();
         if let Ok(mut current_runtime_lock) = self.runtime.lock() {
             match &mut *current_runtime_lock {
-                RunningState::Idle => todo!(),
-                RunningState::LaunchReady(_) => todo!(),
+                RunningState::Idle => self.state_error(&mut event_poster, "Idle", "next"),
+                RunningState::LaunchReady(_) => {
+                    self.state_error(&mut event_poster, "LaunchReady", "next")
+                }
                 RunningState::Running(brainfuck_interpreter) => {
                     brainfuck_interpreter.as_mut().unwrap().next();
                 }
-                RunningState::Terminated(_) => todo!(),
+                RunningState::Terminated(_) => {
+                    self.state_error(&mut event_poster, "Terminated", "next")
+                }
             }
         };
         Ok(())
@@ -209,7 +291,7 @@ impl<'a> UserData<'a> {
         // 1. The disconnect request asks the debug adapter to disconnect from the debuggee (thus ending the debug session)
         if let Ok(mut current_runtime_lock) = self.runtime.lock() {
             match &mut *current_runtime_lock {
-                RunningState::Idle => todo!(),
+                RunningState::Idle => (),
                 RunningState::LaunchReady(brainfuck_interpreter) => {
                     let interpreter = mem::replace(brainfuck_interpreter, None);
                     *current_runtime_lock = RunningState::Terminated(interpreter.unwrap());
@@ -230,10 +312,11 @@ impl<'a> UserData<'a> {
         &mut self,
         _terminate_request_args: Option<TerminateRequestArguments>,
     ) -> Result<(), String> {
+        let mut event_poster = self.event_poster.clone();
         // The terminate request is sent from the client to the debug adapter in order to shut down the debuggee gracefully.
         if let Ok(mut current_runtime_lock) = self.runtime.lock() {
             match &mut *current_runtime_lock {
-                RunningState::Idle => (),
+                RunningState::Idle => self.state_error(&mut event_poster, "Idle", "terminate"),
                 RunningState::LaunchReady(brainfuck_interpreter) => {
                     let interpreter = mem::replace(brainfuck_interpreter, None);
                     *current_runtime_lock = RunningState::Terminated(interpreter.unwrap());
@@ -248,7 +331,10 @@ impl<'a> UserData<'a> {
         Ok(())
     }
 
-    fn evaluate(&mut self, evaluate_request_args: Option<EvaluateRequestArguments>) -> Result<(), String> {
+    fn evaluate(
+        &mut self,
+        evaluate_request_args: Option<EvaluateRequestArguments>,
+    ) -> Result<(), String> {
         info!(">> receive user input via evaluate request");
         if let Ok(mut current_runtime_lock) = self.runtime.lock() {
             match &mut *current_runtime_lock {
@@ -279,6 +365,82 @@ impl<'a> UserData<'a> {
         };
         Ok(vec![v])
     }
+
+    fn threads(
+        &mut self,
+        _threads_request_args: Option<ThreadsRequestArguments>,
+    ) -> Result<ThreadsResponse, String> {
+        Ok(ThreadsResponse {
+            threads: vec![Thread {
+                id: 0,
+                name: "default".to_string(),
+            }],
+        })
+    }
+
+    fn stack_trace(
+        &mut self,
+        _args: Option<StackTraceRequestArguments>,
+    ) -> Result<StackTraceResponse, String> {
+        if let Ok(mut current_runtime_lock) = self.runtime.lock() {
+            match &mut *current_runtime_lock {
+                RunningState::Idle => (),
+                RunningState::LaunchReady(_) => (),
+                RunningState::Running(brainfuck_interpreter) => {
+                    let interpreter = brainfuck_interpreter.as_mut().unwrap();
+                    let pos = interpreter.get_position()?;
+                    let frame = StackFrame {
+                        id: 0,
+                        name: interpreter.get_filename(),
+                        source: StackFrameSource {
+                            name: interpreter.get_filename(),
+                            path: interpreter.get_filename(),
+                        },
+                        line: pos.line + 1,
+                        column: pos.character + 1,
+                    };
+                    return Ok(StackTraceResponse {
+                        stack_frames: vec![frame],
+                        total_frames: 1,
+                    });
+                }
+                RunningState::Terminated(_) => (),
+            }
+        };
+        Err("unknown error".to_string())
+    }
+}
+
+fn set_breakpoints_impl(
+    set_breakpoints_request_args: Option<SetBreakpointsArguments>,
+    interpreter: &mut BrainfuckDebugInterpreter<'_>,
+) -> Vec<Breakpoint> {
+    let mut result = vec![];
+    for bp in &set_breakpoints_request_args
+        .unwrap()
+        .breakpoints
+        .unwrap_or_default()
+    {
+        let breakpoint_validate_result = interpreter
+            .add_and_validate_breakpoint(bp.line as u32 - 1, bp.column.map(|x| x as u32 - 1));
+        if let Some(breakpoint) = breakpoint_validate_result {
+            let verify_result = Breakpoint {
+                id: Some(breakpoint.id),
+                verified: true,
+                line: breakpoint.position.line + 1,
+                column: breakpoint.position.character + 1,
+            };
+            result.push(verify_result);
+        } else {
+            result.push(Breakpoint {
+                id: None,
+                verified: false,
+                line: 0,
+                column: 0,
+            })
+        }
+    }
+    result
 }
 
 /* ----------------- initialize ----------------- */
@@ -358,7 +520,10 @@ struct SourceBreakpoint {
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct Breakpoint {
+    id: Option<usize>,
     verified: bool,
+    line: u32,
+    column: u32,
 }
 
 #[derive(Serialize, Clone)]
@@ -375,8 +540,15 @@ struct Event<T> {
     body: T,
 }
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct StoppedEventBody {
     reason: StoppedEventBodyEnum,
+    description: String,
+    thread_id: u32,
+    preserve_focus_hint: bool,
+    text: String,
+    all_threads_stopped: bool,
+    hit_breakpoint_ids: Vec<usize>,
 }
 #[derive(Serialize)]
 enum StoppedEventBodyEnum {
@@ -415,11 +587,27 @@ struct OutputEventBody {
 struct TerminatedEventBody {}
 
 impl Event<StoppedEventBody> {
-    fn new(reason: StoppedEventBodyEnum) -> Event<StoppedEventBody> {
+    fn new(
+        reason: StoppedEventBodyEnum,
+        text: String,
+        breakpoint_id: Option<usize>,
+    ) -> Event<StoppedEventBody> {
         Event {
             event_type: "event".to_string(),
             event: "stopped".to_string(),
-            body: StoppedEventBody { reason },
+            body: StoppedEventBody {
+                reason,
+                description: text.clone(),
+                thread_id: 0,
+                preserve_focus_hint: false,
+                text: text,
+                all_threads_stopped: true,
+                hit_breakpoint_ids: if breakpoint_id.is_some() {
+                    vec![breakpoint_id.unwrap()]
+                } else {
+                    vec![]
+                },
+            },
         }
     }
 }
@@ -508,6 +696,54 @@ struct Variable {
     value: String,
     variables_reference: usize,
 }
+/* ----------------- threads ----------------- */
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadsRequestArguments {}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadsResponse {
+    threads: Vec<Thread>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Thread {
+    id: usize,
+    name: String,
+}
+/* ----------------- stackTrace ----------------- */
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StackTraceRequestArguments {
+    thread_id: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StackTraceResponse {
+    stack_frames: Vec<StackFrame>,
+    total_frames: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StackFrameSource {
+    name: String,
+    path: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StackFrame {
+    id: usize,
+    name: String,
+    source: StackFrameSource,
+    line: u32,
+    column: u32,
+}
+
 /* ----------------- main ----------------- */
 
 fn main() {
@@ -533,7 +769,7 @@ fn main() {
     let mut dap_service = DapService::new_with_poster(|event_poster| UserData {
         event_poster,
         runtime: Arc::new(Mutex::new(RunningState::Idle)),
-        breakpoint_lines: vec![],
+        breakpoints: vec![],
     })
     .register("initialize".to_string(), Box::new(UserData::initialize))
     .register(
@@ -547,10 +783,14 @@ fn main() {
     )
     .register("continue".to_string(), Box::new(UserData::run))
     .register("next".to_string(), Box::new(UserData::next))
+    .register("stepIn".to_string(), Box::new(UserData::next))
+    .register("stepOut".to_string(), Box::new(UserData::next))
     .register("disconnect".to_string(), Box::new(UserData::disconnect))
     .register("terminate".to_string(), Box::new(UserData::terminate))
     .register("evaluate".to_string(), Box::new(UserData::evaluate))
     .register("variables".to_string(), Box::new(UserData::variables))
+    .register("threads".to_string(), Box::new(UserData::threads))
+    .register("stackTrace".to_string(), Box::new(UserData::stack_trace))
     .build();
     dap_service.start();
     info!("<< brainfuck-dap main");

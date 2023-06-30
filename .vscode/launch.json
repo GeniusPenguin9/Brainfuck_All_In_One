@@ -30,5 +30,11 @@
 			],
 			"preLaunchTask": "build all"
 		},
+		{
+			"name": "brainfuck test.bf",
+			"type": "brainfuck",
+			"request": "launch",
+			"program": "${workspaceFolder}/test.bf",
+		}
 	],
 }

@@ -118,6 +118,37 @@ impl TokenGroup {
     }
 }
 
+pub fn flat_parse(str: &str) -> Result<ParseResult> {
+    let parse_result = parse(str)?;
+    let mut result = Vec::new();
+    _flat_parse(&mut result, parse_result.parse_token_group.tokens());
+    Ok(ParseResult {
+        position: parse_result.position,
+        parse_token_group: TokenGroup {
+            token_group: result,
+        },
+    })
+}
+
+fn _flat_parse(result: &mut Vec<Token>, tokens: &Vec<Token>) {
+    for t in tokens {
+        match &t.token_type {
+            TokenType::SubGroup(x) => {
+                result.push(Token {
+                    range: Range::new(t.range.start, t.range.start),
+                    token_type: TokenType::LoopStart,
+                });
+                _flat_parse(result, x.tokens());
+                result.push(Token {
+                    range: Range::new(t.range.end, t.range.end),
+                    token_type: TokenType::LoopEnd,
+                });
+            }
+            _ => result.push(t.clone()),
+        }
+    }
+}
+
 pub fn parse(str: &str) -> Result<ParseResult> {
     let chars = str.chars();
     let mut chars_with_position = CharsWithPosition {
@@ -146,7 +177,7 @@ pub fn token_to_char(token: &Token) -> char {
         _ => '?',
     }
 }
-//ddddd\n
+
 fn _parse(chars: &mut CharsWithPosition, is_top: bool) -> Result<ParseResult> {
     let mut v = Vec::new();
     let mut stopped = false;

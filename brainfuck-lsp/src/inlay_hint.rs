@@ -330,7 +330,7 @@ impl<'a> TokenIter<'a> {
     }
 
     fn _count_to_label(&self) -> String {
-        let mut result = String::new();
+        let mut result = String::from(" ");
 
         match self.pointer_increment_count - self.pointer_decrement_count {
             x if x > 0 => result.push_str(&format!(">{} ", x)),

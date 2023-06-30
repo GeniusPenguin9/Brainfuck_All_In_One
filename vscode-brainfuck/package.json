@@ -20,7 +20,9 @@
 	"engines": {
 		"vscode": "^1.66.0"
 	},
-	"activationEvents": [],
+	"activationEvents": [
+		"onLanguage:brainfuck"
+	],
 	"contributes": {
 		"languages": [
 			{
