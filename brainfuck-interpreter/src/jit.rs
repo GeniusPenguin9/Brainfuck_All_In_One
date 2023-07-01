@@ -17,7 +17,7 @@ pub struct JITCache {
 }
 unsafe impl Send for JITCache {}
 
-pub trait IBrainfuckMemory {
+pub trait IBrainfuckRuntime {
     fn get_memory_vec_ptr(&self) -> *const u8;
     fn get_index(&self) -> usize;
     fn set_index(&mut self, new_index: usize);
@@ -179,7 +179,7 @@ fn _compile(input: &TokenGroup, instruction_stream: &mut InstructionStream) {
     }
 }
 
-pub fn run<T: IBrainfuckMemory>(jit_cache: &JITCache, runtime: &mut T) {
+pub fn run<T: IBrainfuckRuntime>(jit_cache: &JITCache, runtime: &mut T) {
     let new_index = unsafe {
         let runtime_memory_vec_ptr = runtime.get_memory_vec_ptr();
         let runtime_struct_ptr = transmute::<&mut T, *const u8>(runtime);

@@ -12,3 +12,4 @@ serde_json = "1.0.91"
 brainfuck-interpreter = {path = "../brainfuck-interpreter"}
 log = "0.4.17"
 simplelog = {version = "0.12.1", features = ["paris"]}
+base64 = "0.21.2"

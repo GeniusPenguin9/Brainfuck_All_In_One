@@ -2,9 +2,12 @@ use std::{
     env::{self, current_dir},
     fs,
     mem::{self, transmute},
+    path::Path,
     sync::{Arc, Mutex},
 };
 
+use base64::engine::general_purpose::STANDARD_NO_PAD as base64_encoder;
+use base64::Engine as _;
 use brainfuck_interpreter::{
     BrainfuckDebugInterpreter, OutputCategoryEnum, Position, StoppedReasonEnum,
 };
@@ -56,6 +59,7 @@ impl<'a> UserData<'a> {
         Ok(Capabilities {
             supports_configuration_done_request: Some(true),
             supports_single_thread_execution_requests: Some(true),
+            supports_read_memory_request: Some(true),
         })
     }
 
@@ -212,6 +216,9 @@ impl<'a> UserData<'a> {
                 ),
                 OutputCategoryEnum::StdOut => event_poster
                     .queue_event(&Event::<OutputEventBody>::new("stdout".to_string(), output)),
+                OutputCategoryEnum::MemoryEvent((offset, length)) => {
+                    event_poster.queue_event(&Event::<MemoryEventBody>::new(offset, length))
+                }
             };
 
         if let Ok(mut current_runtime_lock) = self.runtime.lock() {
@@ -352,18 +359,79 @@ impl<'a> UserData<'a> {
         Ok(())
     }
 
+    fn scopes(
+        &mut self,
+        _threads_request_args: Option<ScopesRequestArguments>,
+    ) -> Result<ScopesResponse, String> {
+        Ok(ScopesResponse {
+            scopes: vec![Scope {
+                name: "default".to_string(),
+                variables_reference: 1,
+                expensive: false,
+            }],
+        })
+    }
+
     fn variables(
         &mut self,
         _variables_request_args: Option<VariablesRequestArguments>,
-    ) -> Result<Vec<Variable>, String> {
+    ) -> Result<VariablesResponse, String> {
         info!(">> receive variables request");
-        // TODO: replace mock response
-        let v = Variable {
-            name: "mockName".to_string(),
-            value: "mockValue".to_string(),
-            variables_reference: 1,
+
+        if let Ok(mut current_runtime_lock) = self.runtime.lock() {
+            match &mut *current_runtime_lock {
+                RunningState::Idle => (),
+                RunningState::LaunchReady(_) => (),
+                RunningState::Running(brainfuck_interpreter) => {
+                    let interpreter = brainfuck_interpreter.as_mut().unwrap();
+                    let pos = interpreter.get_variables()?;
+                    let variables: Vec<Variable> = pos
+                        .into_iter()
+                        .map(|(name, value)| Variable {
+                            name,
+                            value,
+                            variables_reference: 0,
+                            memory_reference: "1".to_string(),
+                        })
+                        .collect();
+                    return Ok(VariablesResponse { variables });
+                }
+                RunningState::Terminated(_) => (),
+            }
         };
-        Ok(vec![v])
+        let r = VariablesResponse { variables: vec![] };
+        Ok(r)
+    }
+
+    fn read_memory(
+        &mut self,
+        read_memory_args: Option<ReadMemoryRequestArguments>,
+    ) -> Result<ReadMemoryResponse, String> {
+        info!(">> receive read_memory request");
+
+        if let Ok(mut current_runtime_lock) = self.runtime.lock() {
+            match &mut *current_runtime_lock {
+                RunningState::Idle => (),
+                RunningState::LaunchReady(_) => (),
+                RunningState::Running(brainfuck_interpreter) => {
+                    let interpreter = brainfuck_interpreter.as_mut().unwrap();
+                    let start = read_memory_args
+                        .as_ref()
+                        .unwrap()
+                        .offset
+                        .unwrap_or(0)
+                        .max(0) as usize;
+                    let mem = interpreter.read_memory(start, read_memory_args.unwrap().count)?;
+                    let mem_str = base64_encoder.encode(mem);
+                    return Ok(ReadMemoryResponse {
+                        address: start.to_string(),
+                        data: mem_str,
+                    });
+                }
+                RunningState::Terminated(_) => (),
+            }
+        };
+        Err("invalid state".to_string())
     }
 
     fn threads(
@@ -391,9 +459,19 @@ impl<'a> UserData<'a> {
                     let pos = interpreter.get_position()?;
                     let frame = StackFrame {
                         id: 0,
-                        name: interpreter.get_filename(),
+                        name: Path::new(&interpreter.get_filename())
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_str()
+                            .unwrap_or_default()
+                            .to_string(),
                         source: StackFrameSource {
-                            name: interpreter.get_filename(),
+                            name: Path::new(&interpreter.get_filename())
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_str()
+                                .unwrap_or_default()
+                                .to_string(),
                             path: interpreter.get_filename(),
                         },
                         line: pos.line + 1,
@@ -473,6 +551,8 @@ struct Capabilities {
     supports_configuration_done_request: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     supports_single_thread_execution_requests: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supports_read_memory_request: Option<bool>,
 }
 
 /* ----------------- set_breakpoints ----------------- */
@@ -582,6 +662,14 @@ struct OutputEventBody {
     category: String,
     output: String,
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryEventBody {
+    memory_reference: String,
+    offset: usize,
+    count: usize,
+}
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TerminatedEventBody {}
@@ -642,6 +730,20 @@ impl Event<TerminatedEventBody> {
     }
 }
 
+impl Event<MemoryEventBody> {
+    fn new(offset: usize, count: usize) -> Event<MemoryEventBody> {
+        Event {
+            event_type: "event".to_string(),
+            event: "memory".to_string(),
+            body: MemoryEventBody {
+                memory_reference: "1".to_string(),
+                offset,
+                count,
+            },
+        }
+    }
+}
+
 /* ----------------- launch ----------------- */
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -689,13 +791,57 @@ struct EvaluateRequestArguments {
 struct VariablesRequestArguments {
     variables_reference: usize,
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VariablesResponse {
+    variables: Vec<Variable>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Variable {
     name: String,
     value: String,
     variables_reference: usize,
+    memory_reference: String,
 }
+
+/* ----------------- read_memory ----------------- */
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadMemoryRequestArguments {
+    memory_reference: String,
+    offset: Option<i64>,
+    count: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadMemoryResponse {
+    address: String,
+    data: String,
+}
+
+/* ----------------- scopes ----------------- */
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScopesRequestArguments {}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScopesResponse {
+    scopes: Vec<Scope>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Scope {
+    name: String,
+    variables_reference: usize,
+    expensive: bool,
+}
+
 /* ----------------- threads ----------------- */
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -789,6 +935,8 @@ fn main() {
     .register("terminate".to_string(), Box::new(UserData::terminate))
     .register("evaluate".to_string(), Box::new(UserData::evaluate))
     .register("variables".to_string(), Box::new(UserData::variables))
+    .register("readMemory".to_string(), Box::new(UserData::read_memory))
+    .register("scopes".to_string(), Box::new(UserData::scopes))
     .register("threads".to_string(), Box::new(UserData::threads))
     .register("stackTrace".to_string(), Box::new(UserData::stack_trace))
     .build();

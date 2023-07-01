@@ -1,22 +1,18 @@
-use brainfuck_analyzer::{flat_parse, parse, Range, Token, TokenGroup, TokenType};
+use brainfuck_analyzer::{flat_parse, parse, Token, TokenGroup, TokenType};
 
-use crate::interpreter;
-use crate::jit::IBrainfuckMemory;
+use crate::jit::IBrainfuckRuntime;
 use core::time;
 use simplelog::*;
-use std::borrow::BorrowMut;
-use std::io::Read;
 use std::marker::PhantomData;
 use std::mem::{self, transmute};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
-use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
-use std::{default, fs, vec};
+use std::{fs, vec};
 
 pub use brainfuck_analyzer::Position;
 
-pub struct BrainfuckMemory {
+pub struct BrainfuckRuntime {
     pub index: usize,
     pub memory: Vec<u8>,
 }
@@ -27,7 +23,7 @@ pub struct BrainfuckBreakpoint {
     pub id: usize,
 }
 
-impl IBrainfuckMemory for BrainfuckMemory {
+impl IBrainfuckRuntime for BrainfuckRuntime {
     fn get_memory_vec_ptr(&self) -> *const u8 {
         &self.memory[0] as *const u8
     }
@@ -41,12 +37,20 @@ impl IBrainfuckMemory for BrainfuckMemory {
     }
 }
 
-impl BrainfuckMemory {
-    pub fn new() -> BrainfuckMemory {
-        BrainfuckMemory {
+impl BrainfuckRuntime {
+    pub fn new() -> BrainfuckRuntime {
+        BrainfuckRuntime {
             index: 0,
             memory: vec![0; 1000],
         }
+    }
+
+    fn get_memory_data(&self, index: usize) -> u8 {
+        self.memory[index]
+    }
+
+    fn get_memory_size(&self) -> usize {
+        self.memory.len()
     }
 }
 
@@ -169,7 +173,11 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
         None
     }
 
-    fn handle_command(locals: &mut BrainfuckDebugThreadData, token: &Token) {
+    fn handle_command(
+        locals: &mut BrainfuckDebugThreadData,
+        brainfuck_runtime: &mut BrainfuckRuntime,
+        token: &Token,
+    ) {
         match locals.interpreter_debug_command_rx.try_recv() {
             Ok(command) => match command {
                 InterpreterCommand::Continue => locals.state = InterpreterState::Running,
@@ -189,6 +197,52 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
                 InterpreterCommand::UpdateBreakpoints(breakpoints) => {
                     locals.breakpoints = breakpoints
                 }
+                InterpreterCommand::ReadMemory((start, length)) => {
+                    let mut result = vec![];
+                    for i in start..start + length {
+                        if i < brainfuck_runtime.get_memory_size() {
+                            result.push(brainfuck_runtime.get_memory_data(i));
+                        }
+                    }
+                    locals
+                        .interpreter_debug_response_tx
+                        .send(InterpreterResponse::Memory(result))
+                        .unwrap()
+                }
+                InterpreterCommand::GetVariables => {
+                    let mut map = vec![];
+                    map.push(("pos".to_string(), brainfuck_runtime.get_index().to_string()));
+                    let curpos = brainfuck_runtime.get_index() as i64;
+                    for offset in -5..6 {
+                        let s = match offset {
+                            i64::MIN..=-1 => {
+                                format!("*(pos{})", offset)
+                            }
+                            0 => {
+                                format!("*pos")
+                            }
+                            1..=i64::MAX => {
+                                format!("*(pos+{})", offset)
+                            }
+                        };
+                        if curpos + offset >= 0
+                            && curpos + offset < brainfuck_runtime.get_memory_size() as i64
+                        {
+                            map.push((
+                                s.to_string(),
+                                brainfuck_runtime
+                                    .get_memory_data((curpos + offset) as usize)
+                                    .to_string(),
+                            ));
+                        } else {
+                            map.push((s.to_string(), "Out of range".to_string()));
+                        }
+                    }
+                    locals
+                        .interpreter_debug_response_tx
+                        .send(InterpreterResponse::Variables(map))
+                        .unwrap()
+                }
             },
             Err(TryRecvError::Disconnected) => locals.state = InterpreterState::Terminated,
             Err(TryRecvError::Empty) => (),
@@ -197,7 +251,7 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
 
     pub fn interpret_token(
         locals: &mut BrainfuckDebugThreadData,
-        brainfuck_runtime: &mut BrainfuckMemory,
+        brainfuck_runtime: &mut BrainfuckRuntime,
         token: &Token,
     ) -> bool {
         loop {
@@ -221,10 +275,10 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
                 locals.state = InterpreterState::Paused(token.clone());
             }
 
-            BrainfuckDebugInterpreter::handle_command(locals, token);
+            BrainfuckDebugInterpreter::handle_command(locals, brainfuck_runtime, token);
 
             match &locals.state {
-                InterpreterState::Paused(t) => continue,
+                InterpreterState::Paused(_) => continue,
                 InterpreterState::Running => break,
                 InterpreterState::Step => break,
                 InterpreterState::Terminated => return false,
@@ -256,6 +310,13 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
                     brainfuck_runtime.memory[brainfuck_runtime.index] += 1;
                 }
                 // scope.yield_(StoppedReasonEnum::Step);
+
+                if let Some(bc) = &mut locals.output_callback {
+                    (*bc)(
+                        OutputCategoryEnum::MemoryEvent((brainfuck_runtime.index, 1)),
+                        "".to_string(),
+                    );
+                };
             }
             TokenType::Decrement => {
                 if brainfuck_runtime.memory[brainfuck_runtime.index] == u8::MIN {
@@ -264,6 +325,13 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
                     brainfuck_runtime.memory[brainfuck_runtime.index] -= 1;
                 }
                 // scope.yield_(StoppedReasonEnum::Step);
+
+                if let Some(bc) = &mut locals.output_callback {
+                    (*bc)(
+                        OutputCategoryEnum::MemoryEvent((brainfuck_runtime.index, 1)),
+                        "".to_string(),
+                    );
+                };
             }
             TokenType::Output => {
                 let c: char = brainfuck_runtime.memory[brainfuck_runtime.index].into();
@@ -280,6 +348,13 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
                     if let Ok(input_char) = locals.interpreter_debug_user_input_rx.try_recv() {
                         debug!("Get `{}` from user input", input_char);
                         brainfuck_runtime.memory[brainfuck_runtime.index] = input_char as u8;
+
+                        if let Some(bc) = &mut locals.output_callback {
+                            (*bc)(
+                                OutputCategoryEnum::MemoryEvent((brainfuck_runtime.index, 1)),
+                                "".to_string(),
+                            );
+                        };
                         break;
                     } else {
                         debug!("Cannot get user input");
@@ -368,8 +443,7 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
     ) {
         info!(">> debug_interpreter launch function");
 
-        let mut parse_result = parse(&self.source_content).unwrap();
-        let vec_token = parse_result.parse_token_group.tokens_mut();
+        let parse_result = parse(&self.source_content).unwrap();
 
         /*
          * Why exception:
@@ -410,7 +484,7 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
 
     fn debug_thread(mut debug_data: BrainfuckDebugThreadData, token_group: TokenGroup) {
         info!(">> debug_interpreter debug_thread function");
-        let mut memory = BrainfuckMemory::new();
+        let mut memory = BrainfuckRuntime::new();
 
         for token in token_group.tokens().into_iter() {
             if Self::interpret_token(&mut debug_data, &mut memory, token) == false {
@@ -456,6 +530,50 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
             rx.recv().map_err(|_| "Debug program already finished.")?
         {
             return Ok(p);
+        } else {
+            return Err("Invalid response from get_position".to_string());
+        }
+    }
+
+    pub fn get_variables(&mut self) -> Result<Vec<(String, String)>, String> {
+        let tx = &self
+            .interpreter_debug_command_tx
+            .as_ref()
+            .ok_or("Debug program already finished.".to_string())?;
+        let rx = &self
+            .interpreter_debug_response_rx
+            .as_ref()
+            .ok_or("Debug program already finished.".to_string())?;
+
+        tx.send(InterpreterCommand::GetVariables)
+            .map_err(|_| "Debug program already finished.")?;
+
+        if let InterpreterResponse::Variables(v) =
+            rx.recv().map_err(|_| "Debug program already finished.")?
+        {
+            return Ok(v);
+        } else {
+            return Err("Invalid response from get_position".to_string());
+        }
+    }
+
+    pub fn read_memory(&mut self, start: usize, length: usize) -> Result<Vec<u8>, String> {
+        let tx = &self
+            .interpreter_debug_command_tx
+            .as_ref()
+            .ok_or("Debug program already finished.".to_string())?;
+        let rx = &self
+            .interpreter_debug_response_rx
+            .as_ref()
+            .ok_or("Debug program already finished.".to_string())?;
+
+        tx.send(InterpreterCommand::ReadMemory((start, length)))
+            .map_err(|_| "Debug program already finished.")?;
+
+        if let InterpreterResponse::Memory(v) =
+            rx.recv().map_err(|_| "Debug program already finished.")?
+        {
+            return Ok(v);
         } else {
             return Err("Invalid response from get_position".to_string());
         }
@@ -511,6 +629,7 @@ pub enum StoppedReasonEnum {
 pub enum OutputCategoryEnum {
     Console,
     StdOut,
+    MemoryEvent((usize, usize)), // offset, length
 }
 
 #[derive(PartialEq)]
@@ -528,11 +647,15 @@ pub enum InterpreterCommand {
     Pause,
     Terminate,
     UpdateBreakpoints(Vec<BrainfuckBreakpoint>),
+    GetVariables,
+    ReadMemory((usize, usize)),
 }
 
 pub enum InterpreterResponse {
     Error,
     Position(Position),
+    Variables(Vec<(String, String)>),
+    Memory(Vec<u8>),
 }
 
 // #[test]
@@ -556,11 +679,10 @@ pub enum InterpreterResponse {
 
 #[test]
 pub fn test_breakpoint_continue_debug_mode() {
-    use std::fs;
     let mut callback_hit = 0;
     let source_content = include_str!("../benches/jit_benchmark_test_calculation.bf").to_string();
     let mut brainfuck_debug_interpreter = BrainfuckDebugInterpreter::new(source_content);
-    let breakpoint_lines: Vec<Position> = vec![Position::new(0, 0), Position::new(6, 9)];
+    // let breakpoint_lines: Vec<Position> = vec![Position::new(0, 0), Position::new(6, 9)];
     brainfuck_debug_interpreter.add_and_validate_breakpoint(0, None);
     brainfuck_debug_interpreter.add_and_validate_breakpoint(6, Some(9));
 
