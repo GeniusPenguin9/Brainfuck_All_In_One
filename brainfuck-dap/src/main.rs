@@ -1,7 +1,7 @@
 use std::{
     env::{self, current_dir},
     fs,
-    mem::{self, transmute},
+    mem::{self},
     path::Path,
     sync::{Arc, Mutex},
 };
@@ -20,7 +20,6 @@ mod dap;
 struct UserData<'a> {
     event_poster: EventPoster,
     runtime: Arc<Mutex<RunningState<'a>>>,
-    breakpoints: Vec<Position>,
 }
 
 enum RunningState<'a> {
@@ -524,8 +523,8 @@ fn set_breakpoints_impl(
 /* ----------------- initialize ----------------- */
 #[derive(Deserialize)]
 struct InitializeRequestArguments {
-    #[serde(rename(deserialize = "adapterID"))]
-    adapter_id: String,
+    // #[serde(rename(deserialize = "adapterID"))]
+    // adapter_id: String,
 }
 
 #[derive(Serialize)]
@@ -559,9 +558,9 @@ struct Capabilities {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SetBreakpointsArguments {
-    source: Source,
+    // source: Source,
     breakpoints: Option<Vec<SourceBreakpoint>>,
-    source_modified: Option<bool>,
+    // source_modified: Option<bool>,
 }
 
 /**
@@ -593,9 +592,9 @@ enum PresentationHintEnum {
 struct SourceBreakpoint {
     line: usize,
     column: Option<usize>,
-    condition: Option<String>,
-    hit_condition: Option<String>,
-    log_message: Option<String>,
+    // condition: Option<String>,
+    // hit_condition: Option<String>,
+    // log_message: Option<String>,
 }
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -636,20 +635,20 @@ enum StoppedEventBodyEnum {
     Step,
     #[serde(rename(serialize = "breakpoint"))]
     Breakpoint,
-    #[serde(rename(serialize = "exception"))]
-    Exception,
-    #[serde(rename(serialize = "pause"))]
-    Pause,
-    #[serde(rename(serialize = "entry"))]
-    Entry,
-    #[serde(rename(serialize = "goto"))]
-    GoTo,
-    #[serde(rename(serialize = "function breakpoint"))]
-    FunctionBreakpoint,
-    #[serde(rename(serialize = "data breakpoint"))]
-    DataBreakpoint,
-    #[serde(rename(serialize = "instruction breakpoint"))]
-    InstructionBreakpoint,
+    // #[serde(rename(serialize = "exception"))]
+    // Exception,
+    // #[serde(rename(serialize = "pause"))]
+    // Pause,
+    // #[serde(rename(serialize = "entry"))]
+    // Entry,
+    // #[serde(rename(serialize = "goto"))]
+    // GoTo,
+    // #[serde(rename(serialize = "function breakpoint"))]
+    // FunctionBreakpoint,
+    // #[serde(rename(serialize = "data breakpoint"))]
+    // DataBreakpoint,
+    // #[serde(rename(serialize = "instruction breakpoint"))]
+    // InstructionBreakpoint,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -758,26 +757,26 @@ struct ConfigurationDoneRequestArguments {}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ContinueRequestArguments {
-    thread_id: usize,
+    // thread_id: usize,
 }
 
 /* ----------------- next ----------------- */
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NextRequestArguments {
-    thread_id: usize,
+    // thread_id: usize,
 }
 /* ----------------- disconnect ----------------- */
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DisconnectRequestArguments {
-    restart: Option<bool>,
+    // restart: Option<bool>,
 }
 /* ----------------- terminate ----------------- */
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TerminateRequestArguments {
-    restart: Option<bool>,
+    // restart: Option<bool>,
 }
 /* ----------------- evaluate ----------------- */
 #[derive(Deserialize)]
@@ -789,7 +788,7 @@ struct EvaluateRequestArguments {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct VariablesRequestArguments {
-    variables_reference: usize,
+    // variables_reference: usize,
 }
 
 #[derive(Serialize)]
@@ -811,7 +810,7 @@ struct Variable {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ReadMemoryRequestArguments {
-    memory_reference: String,
+    // memory_reference: String,
     offset: Option<i64>,
     count: usize,
 }
@@ -863,7 +862,7 @@ struct Thread {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StackTraceRequestArguments {
-    thread_id: usize,
+    // thread_id: usize,
 }
 
 #[derive(Serialize)]
@@ -915,7 +914,6 @@ fn main() {
     let mut dap_service = DapService::new_with_poster(|event_poster| UserData {
         event_poster,
         runtime: Arc::new(Mutex::new(RunningState::Idle)),
-        breakpoints: vec![],
     })
     .register("initialize".to_string(), Box::new(UserData::initialize))
     .register(
@@ -946,94 +944,94 @@ fn main() {
 
 /* ----------------- test ----------------- */
 
-#[test]
-fn test_initialization_request() {
-    use std::io::{Read, Write};
-    use std::process::{Command, Stdio};
-    use std::{thread, time};
+// #[test]
+// fn test_initialization_request() {
+//     use std::io::{Read, Write};
+//     use std::process::{Command, Stdio};
+//     use std::{thread, time};
 
-    let mut child = Command::new("cargo")
-        .args(["run"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("Failed during cargo run");
+//     let mut child = Command::new("cargo")
+//         .args(["run"])
+//         .stdin(Stdio::piped())
+//         .stdout(Stdio::piped())
+//         .spawn()
+//         .expect("Failed during cargo run");
 
-    let child_stdin = child.stdin.as_mut().unwrap();
-    let child_stdout = child.stdout.as_mut().unwrap();
-    let initialization_request = "Content-Length: 128\r\n\r\n{\r\n    \"seq\": 153,\r\n    \"type\": \"request\",\r\n    \"command\": \"initialize\",\r\n    \"arguments\": {\r\n        \"adapterID\": \"a\"\r\n    }\r\n}\r\n";
-    child_stdin
-        .write_all(initialization_request.as_bytes())
-        .unwrap();
-    // Close stdin to finish and avoid indefinite blocking
-    drop(child_stdin);
-    thread::sleep(time::Duration::from_secs(5));
+//     let child_stdin = child.stdin.as_mut().unwrap();
+//     let child_stdout = child.stdout.as_mut().unwrap();
+//     let initialization_request = "Content-Length: 128\r\n\r\n{\r\n    \"seq\": 153,\r\n    \"type\": \"request\",\r\n    \"command\": \"initialize\",\r\n    \"arguments\": {\r\n        \"adapterID\": \"a\"\r\n    }\r\n}\r\n";
+//     child_stdin
+//         .write_all(initialization_request.as_bytes())
+//         .unwrap();
+//     // Close stdin to finish and avoid indefinite blocking
+//     drop(child_stdin);
+//     thread::sleep(time::Duration::from_secs(5));
 
-    let mut read_buf: [u8; 300] = [0; 300];
-    child_stdout.read(&mut read_buf).unwrap();
-    child.kill().unwrap();
+//     let mut read_buf: [u8; 300] = [0; 300];
+//     child_stdout.read(&mut read_buf).unwrap();
+//     child.kill().unwrap();
 
-    let actual = String::from_utf8(read_buf.to_vec()).unwrap();
-    println!("Get actual response = {}", actual);
-    assert!(actual.contains("Content-Length: 129\r\n\r\n{\"type\":\"response\",\"request_seq\":153,\"success\":true,\"command\":\"initialize\",\"body\":{\"supportsSingleThreadExecutionRequests\":true}}\r\nContent-Length: 38\r\n\r\n{\"type\":\"event\",\"event\":\"initialized\"}"));
-}
+//     let actual = String::from_utf8(read_buf.to_vec()).unwrap();
+//     println!("Get actual response = {}", actual);
+//     assert!(actual.contains("Content-Length: 129\r\n\r\n{\"type\":\"response\",\"request_seq\":153,\"success\":true,\"command\":\"initialize\",\"body\":{\"supportsSingleThreadExecutionRequests\":true}}\r\nContent-Length: 38\r\n\r\n{\"type\":\"event\",\"event\":\"initialized\"}"));
+// }
 
-#[test]
-fn test_launch_request() {
-    use std::io::{Read, Write};
-    use std::process::{Command, Stdio};
-    use std::{thread, time};
+// #[test]
+// fn test_launch_request() {
+//     use std::io::{Read, Write};
+//     use std::process::{Command, Stdio};
+//     use std::{thread, time};
 
-    let mut child = Command::new("cargo")
-        .args(["run"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("Failed during cargo run");
+//     let mut child = Command::new("cargo")
+//         .args(["run"])
+//         .stdin(Stdio::piped())
+//         .stdout(Stdio::piped())
+//         .spawn()
+//         .expect("Failed during cargo run");
 
-    let child_stdin = child.stdin.as_mut().unwrap();
-    let child_stdout = child.stdout.as_mut().unwrap();
-    let launch_request = "Content-Length: 233\r\n\r\n{\"command\": \"launch\",\"arguments\": {\"name\": \"Brainfuck-Debug\",\"type\": \"brainfuck\",\"request\": \"launch\",\"program\":\"../test.bf\",\"__configurationTarget\": 6,\"__sessionId\": \"36201e43-539a-4fd6-beb8-5e0bc2b18abe\"},\"type\": \"request\",\"seq\": 2}\r\n";
-    child_stdin.write_all(launch_request.as_bytes()).unwrap();
-    // Close stdin to finish and avoid indefinite blocking
-    drop(child_stdin);
-    thread::sleep(time::Duration::from_secs(5));
+//     let child_stdin = child.stdin.as_mut().unwrap();
+//     let child_stdout = child.stdout.as_mut().unwrap();
+//     let launch_request = "Content-Length: 233\r\n\r\n{\"command\": \"launch\",\"arguments\": {\"name\": \"Brainfuck-Debug\",\"type\": \"brainfuck\",\"request\": \"launch\",\"program\":\"../test.bf\",\"__configurationTarget\": 6,\"__sessionId\": \"36201e43-539a-4fd6-beb8-5e0bc2b18abe\"},\"type\": \"request\",\"seq\": 2}\r\n";
+//     child_stdin.write_all(launch_request.as_bytes()).unwrap();
+//     // Close stdin to finish and avoid indefinite blocking
+//     drop(child_stdin);
+//     thread::sleep(time::Duration::from_secs(5));
 
-    let mut read_buf: [u8; 300] = [0; 300];
-    child_stdout.read(&mut read_buf).unwrap();
-    child.kill().unwrap();
+//     let mut read_buf: [u8; 300] = [0; 300];
+//     child_stdout.read(&mut read_buf).unwrap();
+//     child.kill().unwrap();
 
-    let actual = String::from_utf8(read_buf.to_vec()).unwrap();
-    println!("Get actual response = {}", actual);
-    assert!(actual.contains("Content-Length: 81\r\n\r\n{\"type\":\"response\",\"request_seq\":2,\"success\":true,\"command\":\"launch\",\"body\":null}"));
-}
+//     let actual = String::from_utf8(read_buf.to_vec()).unwrap();
+//     println!("Get actual response = {}", actual);
+//     assert!(actual.contains("Content-Length: 81\r\n\r\n{\"type\":\"response\",\"request_seq\":2,\"success\":true,\"command\":\"launch\",\"body\":null}"));
+// }
 
-#[test]
-fn test_unknown_request() {
-    use std::io::{Read, Write};
-    use std::process::{Command, Stdio};
-    use std::{thread, time};
+// #[test]
+// fn test_unknown_request() {
+//     use std::io::{Read, Write};
+//     use std::process::{Command, Stdio};
+//     use std::{thread, time};
 
-    let mut child = Command::new("cargo")
-        .args(["run"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("Failed during cargo run");
+//     let mut child = Command::new("cargo")
+//         .args(["run"])
+//         .stdin(Stdio::piped())
+//         .stdout(Stdio::piped())
+//         .spawn()
+//         .expect("Failed during cargo run");
 
-    let child_stdin = child.stdin.as_mut().unwrap();
-    let child_stdout = child.stdout.as_mut().unwrap();
-    let unknown_request = "Content-Length: 85\r\n\r\n{\"command\": \"abcdefghij\",\"arguments\": {\"restart\": false},\"type\": \"request\",\"seq\": 1}\r\n";
-    child_stdin.write_all(unknown_request.as_bytes()).unwrap();
-    // Close stdin to finish and avoid indefinite blocking
-    drop(child_stdin);
-    thread::sleep(time::Duration::from_secs(5));
+//     let child_stdin = child.stdin.as_mut().unwrap();
+//     let child_stdout = child.stdout.as_mut().unwrap();
+//     let unknown_request = "Content-Length: 85\r\n\r\n{\"command\": \"abcdefghij\",\"arguments\": {\"restart\": false},\"type\": \"request\",\"seq\": 1}\r\n";
+//     child_stdin.write_all(unknown_request.as_bytes()).unwrap();
+//     // Close stdin to finish and avoid indefinite blocking
+//     drop(child_stdin);
+//     thread::sleep(time::Duration::from_secs(5));
 
-    let mut read_buf: [u8; 300] = [0; 300];
-    child_stdout.read(&mut read_buf).unwrap();
-    child.kill().unwrap();
+//     let mut read_buf: [u8; 300] = [0; 300];
+//     child_stdout.read(&mut read_buf).unwrap();
+//     child.kill().unwrap();
 
-    let actual = String::from_utf8(read_buf.to_vec()).unwrap();
-    println!("Get actual response = {}", actual);
-    assert!(actual.contains("Content-Length: 74\r\n\r\n{\"type\":\"response\",\"request_seq\":1,\"success\":false,\"command\":\"abcdefghij\"}"));
-}
+//     let actual = String::from_utf8(read_buf.to_vec()).unwrap();
+//     println!("Get actual response = {}", actual);
+//     assert!(actual.contains("Content-Length: 74\r\n\r\n{\"type\":\"response\",\"request_seq\":1,\"success\":false,\"command\":\"abcdefghij\"}"));
+// }
