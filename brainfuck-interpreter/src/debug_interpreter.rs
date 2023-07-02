@@ -150,9 +150,10 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
                     return Some(breakpoint);
                 }
             } else {
-                if last_token.is_some()
+                if (last_token.is_some()
                     && last_token.unwrap().range.end.line != row
-                    && t.range.start.line == row
+                    && t.range.start.line == row)
+                    || (last_token.is_none() && t.range.start.line == 0 && row == 0)
                 {
                     debug!(
                         "breakpoint validated @ {},{}",
@@ -601,6 +602,15 @@ impl<'a> BrainfuckDebugInterpreter<'a> {
                 .ok();
         }
     }
+
+    pub fn wait_for_finish(&mut self) {
+        debug!("BrainfuckDebugInterpreter wait_for_finish start");
+        let thread = mem::replace(&mut self.thread, None);
+        if let Some(thread) = thread {
+            thread.join().ok();
+            debug!("BrainfuckDebugInterpreter debug_thread drop.");
+        }
+    }
 }
 
 impl<'a> Drop for BrainfuckDebugInterpreter<'a> {
@@ -683,25 +693,36 @@ pub fn test_breakpoint_continue_debug_mode() {
     let source_content = include_str!("../benches/jit_benchmark_test_calculation.bf").to_string();
     let mut brainfuck_debug_interpreter = BrainfuckDebugInterpreter::new(source_content);
     // let breakpoint_lines: Vec<Position> = vec![Position::new(0, 0), Position::new(6, 9)];
-    brainfuck_debug_interpreter.add_and_validate_breakpoint(0, None);
-    brainfuck_debug_interpreter.add_and_validate_breakpoint(6, Some(9));
+    brainfuck_debug_interpreter
+        .add_and_validate_breakpoint(0, None)
+        .unwrap();
+    brainfuck_debug_interpreter
+        .add_and_validate_breakpoint(6, Some(9))
+        .unwrap();
 
-    let callback = |reason: StoppedReasonEnum, loc, id| {
-        callback_hit += 1;
+    let callback = |reason: StoppedReasonEnum, _loc, _id| {
+        if reason == StoppedReasonEnum::Breakpoint {
+            callback_hit += 1;
+        }
     };
     brainfuck_debug_interpreter.launch(Some(Box::new(callback)), None);
-    for i in 0..(255 * 255 * 255 + 1) {
-        brainfuck_debug_interpreter.run();
+    loop {
+        if let Err(err_msg) = brainfuck_debug_interpreter.run() {
+            if &err_msg == "Debug program already finished." {
+                break;
+            } else {
+                panic!();
+            }
+        }
     }
 
     // wait until interpreter thread complete
-    thread::sleep(time::Duration::from_secs(10));
     drop(brainfuck_debug_interpreter);
 
     // line 0, breakpoint 1 time
     // line 6, breakpoint 255 * 255 * 255 times
     // complete 1 time
-    assert_eq!(1 + 255 * 255 * 255 + 1, callback_hit);
+    assert_eq!(1 + 255 * 255 * 255, callback_hit);
 }
 
 // TODO:
