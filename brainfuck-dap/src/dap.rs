@@ -28,7 +28,7 @@ impl<'a, TUserData> DapService<'a, TUserData> {
     pub fn register<TArguments: DeserializeOwned + 'a, TResponseBody: Serialize + 'a>(
         mut self,
         fn_name: String,
-        fn_handler: Box<dyn Fn(&mut TUserData, TArguments) -> Result<TResponseBody, String>>,
+        fn_handler: Box<dyn Fn(&mut TUserData, Option<TArguments>) -> Result<TResponseBody, String>>,
     ) -> Self {
         self.dealer.register(fn_name, fn_handler);
         self
@@ -80,16 +80,41 @@ impl<'a, TUserData> DapService<'a, TUserData> {
     }
 
     fn dap_thread(&mut self, i2d_rx: Receiver<Message>) {
+        // TODO: temporary workaround for uncertain sequence between configurationDone request and launch request
+        let mut launch_response: String = "".to_string();
         loop {
             if let Ok(io_request) = i2d_rx.try_recv() {
                 info!("dap_thread: receive io_request = {}", io_request);
                 let io_result = self.dealer.process_request(&io_request);
                 info!("dap_thread: after execute, io_result = {}", io_result);
+
+                if io_result.eq("Disconnect") {
+                    info!("dap_thread: Ready to disconnect");
+                    break;
+                }
+
+                if io_result.contains("\"launch\"") {
+                    launch_response = io_result;
+                    info!("dap_thread: Launch handle complete, hang up launc response now");
+                    continue;
+                }
+
                 print!(
                     "Content-Length: {}\r\n\r\n{}\r\n",
                     io_result.len(),
                     io_result
                 );
+
+                if io_result.contains("\"configurationDone\"") {
+                    print!(
+                        "Content-Length: {}\r\n\r\n{}\r\n",
+                        launch_response.len(),
+                        launch_response
+                    );
+                    info!(
+                        "dap_thread: ConfigurationDone handle complete, print launch response now"
+                    );
+                }
                 info!("dap_thread: print complete");
             }
 
@@ -223,7 +248,7 @@ struct DAPRequest {
 struct DAPRequestWithArguments<TArguments> {
     seq: usize,
     command: String,
-    arguments: TArguments,
+    arguments: Option<TArguments>,
 }
 
 #[derive(Serialize)]
@@ -260,48 +285,66 @@ impl<'a, TUserData> Dealer<'a, TUserData> {
     pub fn register<TArguments: DeserializeOwned + 'a, TResponseBody: Serialize + 'a>(
         &mut self,
         fn_name: String,
-        fn_handler: Box<dyn Fn(&mut TUserData, TArguments) -> Result<TResponseBody, String>>,
+        fn_handler: Box<dyn Fn(&mut TUserData, Option<TArguments>) -> Result<TResponseBody, String>>,
     ) {
         let new_function = move |user_data: &mut TUserData, request_str: String| {
             let request_with_arg: DAPRequestWithArguments<TArguments> =
                 serde_json::from_str(&request_str).unwrap();
 
-            let result = match fn_handler(user_data, request_with_arg.arguments) {
-                Ok(success_body) => DAPResponseWithBody::<TResponseBody> {
-                    response_type: "response".to_string(),
-                    request_seq: request_with_arg.seq,
-                    success: true,
-                    command: request_with_arg.command,
-                    message: None,
-                    body: Some(success_body),
-                },
-                Err(err) => DAPResponseWithBody::<TResponseBody> {
-                    response_type: "response".to_string(),
-                    request_seq: request_with_arg.seq,
-                    success: false,
-                    command: request_with_arg.command,
-                    message: Some(err),
-                    body: None,
-                },
-            };
-
-            let result_str = serde_json::to_string(&result).unwrap();
-            info!(
-                "dap register: request = {}, response = {}",
-                request_str, result_str
-            );
-            result_str
+            match fn_handler(user_data, request_with_arg.arguments) {
+                Ok(success_body) => {
+                    let result = DAPResponseWithBody::<TResponseBody> {
+                        response_type: "response".to_string(),
+                        request_seq: request_with_arg.seq,
+                        success: true,
+                        command: request_with_arg.command,
+                        message: None,
+                        body: Some(success_body),
+                    };
+                    let result_str = serde_json::to_string(&result).unwrap();
+                    info!(
+                        "dap register: request = {}, response = {}",
+                        request_str, result_str
+                    );
+                    result_str
+                }
+                Err(err) if err.eq("Disconnect") => {
+                    info!(
+                        "dap register: request = {}, response = {}",
+                        request_str, err
+                    );
+                    err
+                }
+                Err(err) => {
+                    let result = DAPResponseWithBody::<TResponseBody> {
+                        response_type: "response".to_string(),
+                        request_seq: request_with_arg.seq,
+                        success: false,
+                        command: request_with_arg.command,
+                        message: Some(err),
+                        body: None,
+                    };
+                    let result_str = serde_json::to_string(&result).unwrap();
+                    info!(
+                        "dap register: request = {}, response = {}",
+                        request_str, result_str
+                    );
+                    result_str
+                }
+            }
         };
 
         self.function_map.insert(fn_name, Box::new(new_function));
     }
 
     pub fn process_request(&mut self, io_request: &str) -> String {
+        info!(">> process_request");
         let dap_request: DAPRequest = serde_json::from_str(io_request).unwrap();
         let handler = self.function_map.get(&dap_request.command);
         match handler {
             Some(h) => h(&mut self.user_data, io_request.to_string()),
             None => {
+                info!("process_request: do not find suitable handler for request");
                 let error_response = DAPResponseWithBody::<()> {
                     response_type: "response".to_string(),
                     request_seq: dap_request.seq.clone(),
@@ -311,7 +354,7 @@ impl<'a, TUserData> Dealer<'a, TUserData> {
                     body: None,
                 };
                 serde_json::to_string(&error_response).unwrap()
-            },
+            }
         }
     }
 }

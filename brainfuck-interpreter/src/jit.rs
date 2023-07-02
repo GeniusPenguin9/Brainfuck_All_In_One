@@ -10,6 +10,7 @@ use assembler::InstructionStreamHints::InstructionStreamHints;
 use brainfuck_analyzer::{parse, TokenGroup, TokenType};
 
 pub struct JITCache {
+    #[allow(unused_variables, dead_code)]
     function_pointer:
         unsafe extern "sysv64" fn(mem: *const u8, offset: u64, struct_ptr: *const u8) -> u64,
     #[allow(unused_variables, dead_code)]
@@ -17,7 +18,7 @@ pub struct JITCache {
 }
 unsafe impl Send for JITCache {}
 
-pub trait IBrainfuckMemory {
+pub trait IBrainfuckRuntime {
     fn get_memory_vec_ptr(&self) -> *const u8;
     fn get_index(&self) -> usize;
     fn set_index(&mut self, new_index: usize);
@@ -179,7 +180,7 @@ fn _compile(input: &TokenGroup, instruction_stream: &mut InstructionStream) {
     }
 }
 
-pub fn run<T: IBrainfuckMemory>(jit_cache: &JITCache, runtime: &mut T) {
+pub fn run<T: IBrainfuckRuntime>(jit_cache: &JITCache, runtime: &mut T) {
     let new_index = unsafe {
         let runtime_memory_vec_ptr = runtime.get_memory_vec_ptr();
         let runtime_struct_ptr = transmute::<&mut T, *const u8>(runtime);
@@ -200,15 +201,18 @@ pub fn interpret_jit(input: &str) {
     run(&jit_cache, &mut memory);
 }
 
+#[allow(unused_variables, dead_code)]
 unsafe extern "sysv64" fn input_char() -> u8 {
     libc::getchar() as u8
 }
 
+#[allow(unused_variables, dead_code)]
 unsafe extern "sysv64" fn output_char(c: u8) -> u8 {
     libc::putchar(c as i32);
     c
 }
 
+#[allow(unused_variables, dead_code)]
 unsafe extern "sysv64" fn runtime_resize(
     runtime: &mut BrainfuckMemory,
     current_index: u8,
@@ -250,16 +254,16 @@ pub fn test_jit_with_io() {
 
 // This test case need manual input, disable by default for auto testing
 // #[test]
-pub fn test_jit_with_io2() {
-    let input = ",+.";
-    let parse_result = parse(input).unwrap();
+// pub fn test_jit_with_io2() {
+//     let input = ",+.";
+//     let parse_result = parse(input).unwrap();
 
-    let mut memory = BrainfuckMemory::new();
-    let jit_cache = compile(&parse_result.parse_token_group);
-    run(&jit_cache, &mut memory);
+//     let mut memory = BrainfuckMemory::new();
+//     let jit_cache = compile(&parse_result.parse_token_group);
+//     run(&jit_cache, &mut memory);
 
-    // manual input "A", should find a "B" as output
-}
+//     // manual input "A", should find a "B" as output
+// }
 
 #[test]
 #[cfg(windows)]

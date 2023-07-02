@@ -10,7 +10,6 @@ brainfuck-analyzer = {path = "../brainfuck-analyzer"}
 assembler = {git="https://github.com/CaulyKan/assembler.git", branch="windows"}
 libc = "0.2.138"
 clap = { version = "4.0.29", features = ["derive"] }
-generator = "0.7.3"
 log = "0.4.17"
 simplelog = {version = "0.12.1", features = ["paris"]}
 

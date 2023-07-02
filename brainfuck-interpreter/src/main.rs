@@ -1,6 +1,6 @@
 use crate::{autojit::interpret_auto_jit, jit::interpret_jit};
-use interpreter::interpret;
 use clap::Parser;
+use interpreter::interpret;
 use std::fs;
 
 mod autojit;

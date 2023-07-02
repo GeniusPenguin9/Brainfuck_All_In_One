@@ -2,14 +2,14 @@ use std::io::Read;
 
 use brainfuck_analyzer::{parse, Token, TokenType};
 
-use crate::jit::IBrainfuckMemory;
+use crate::jit::IBrainfuckRuntime;
 
 pub struct BrainfuckMemory {
     pub index: usize,
     pub memory: Vec<u8>,
 }
 
-impl IBrainfuckMemory for BrainfuckMemory {
+impl IBrainfuckRuntime for BrainfuckMemory {
     fn get_memory_vec_ptr(&self) -> *const u8 {
         &self.memory[0] as *const u8
     }

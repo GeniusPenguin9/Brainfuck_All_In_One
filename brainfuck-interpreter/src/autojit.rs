@@ -4,7 +4,7 @@ use std::{
     thread,
 };
 
-use crate::jit::{compile, run, IBrainfuckMemory, JITCache};
+use crate::jit::{compile, run, IBrainfuckRuntime, JITCache};
 use brainfuck_analyzer::{parse, Range, Token, TokenGroup, TokenType};
 
 struct SubGroupCache {
@@ -18,7 +18,7 @@ pub struct AutoJITBrainfuckMemory {
     pub memory: Vec<u8>,
 }
 
-impl IBrainfuckMemory for AutoJITBrainfuckMemory {
+impl IBrainfuckRuntime for AutoJITBrainfuckMemory {
     fn get_memory_vec_ptr(&self) -> *const u8 {
         &self.memory[0] as *const u8
     }
