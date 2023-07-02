@@ -9,7 +9,7 @@
 * Inlay Hints
 * Linting
 * Running brainfuck program with/without JIT
-* Debugging (To be done)
+* Debugging
 
 ![](images/demo.png)
 
