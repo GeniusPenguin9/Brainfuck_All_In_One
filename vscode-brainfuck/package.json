@@ -112,7 +112,7 @@
 	"main": "./out/main.js",
 	"scripts": {
 		"package": "make-dir server/windows && make-dir server/linux && cpy \"../target/x86_64-pc-windows-gnu/release/*.exe\" server/windows && cpy \"../target/x86_64-unknown-linux-musl/release/brainfuck-*\" server/linux && vsce package -o brainfuck-all-in-one.vsix",
-		"vscode:prepublish": "npm run esbuild-base -- --minify && make-dir server/windows && make-dir server/linux && cpy \"../target/debug/*.exe\" server/windows",
+		"vscode:prepublish": "npm run esbuild-base -- --minify && make-dir server/windows && make-dir server/linux && cpy \"../target/debug/*.exe\" server/windows && cpy \"../target/debug/*\" server/linux",
 		"compile": "tsc -b",
 		"watch": "tsc -b -w",
 		"lint": "eslint ./client/src --ext .ts,.tsx",
