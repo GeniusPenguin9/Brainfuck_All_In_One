@@ -53,6 +53,12 @@ To debug a .bf file, use following config in .vscode/launch.json:
   }
 ```
 
+### Update Log
+* 0.1.0: Initial release.
+* 0.1.1: Fix jit bug.
+
 ## More Infomation
-* Submit an issue: [https://github.com/GeniusPenguin9/Brainfuck_All_In_One/issues](https://github.com/GeniusPenguin9/Brainfuck_All_In_One/issues)
-* Histroy versions: [https://marketplace.visualstudio.com/items?itemName=BabyPenguin.vscode-brainfuck](https://marketplace.visualstudio.com/items?itemName=BabyPenguin.vscode-brainfuck)
+* [Marketplace link](https://marketplace.visualstudio.com/items?itemName=BabyPenguin.vscode-brainfuck&ssr=false#overview)
+* [Github homepage](https://github.com/GeniusPenguin9/Brainfuck_All_In_One)
+* [Submit an issue](https://github.com/GeniusPenguin9/Brainfuck_All_In_One/issues/new)
+* [History versions](https://marketplace.visualstudio.com/items?itemName=BabyPenguin.vscode-brainfuck&ssr=false#version-history)
