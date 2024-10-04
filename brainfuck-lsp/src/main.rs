@@ -67,7 +67,7 @@ impl LanguageServer for Backend {
             .initialization_options
             .and_then(|v| v.as_object().cloned())
             .and_then(|o| o.get("enableInlayHints").cloned())
-            .and_then(|v2| v2.as_bool())
+            .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
         Ok(InitializeResult {
