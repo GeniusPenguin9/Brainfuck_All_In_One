@@ -20,6 +20,9 @@ The formatter will try to format in following rule:
 1. '\[' & '\]' will occupy a single line and indent internal symbols.
 2. zero or more movements(<>), one or more calculations(+-), and zero or more IO(.,) will compose a line.
 
+### Inlay Hints
+Could be configured via "vscodeBrainfuck.enableInlayHints", default value is true.
+
 ### Linting
 The linting tool will work automatically for .bf files.
 
@@ -52,6 +55,7 @@ To debug a .bf file, use following config in .vscode/launch.json:
 ### Update Log
 * 0.1.0: Initial release.
 * 0.1.1: Fix jit bug.
+* 0.1.2: Support inlay hints configuration.
 
 ## More Information
 * [Marketplace link](https://marketplace.visualstudio.com/items?itemName=BabyPenguin.vscode-brainfuck&ssr=false#overview)

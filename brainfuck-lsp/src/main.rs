@@ -6,7 +6,7 @@ use tower_lsp::jsonrpc::Result;
 // use tower_lsp::lsp_types::*;s
 use tower_lsp::lsp_types::{
     Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
-    DidOpenTextDocumentParams, DocumentFormattingParams, InitializeParams, InitializeResult,
+    DidOpenTextDocumentParams,DidChangeConfigurationParams, DocumentFormattingParams, InitializeParams, InitializeResult,
     InitializedParams, InlayHint, InlayHintParams, MessageType, OneOf, ServerCapabilities,
     ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
 };
@@ -19,7 +19,13 @@ pub mod inlay_hint;
 struct Backend {
     client: Client,
     text_documents: Arc<Mutex<HashMap<String, TextDocumentItemValue>>>,
+    inner: Arc<Mutex<BackendState>>,
 }
+
+struct BackendState {
+    enable_inlay_hints: bool,
+}
+
 pub struct TextDocumentItemValue {
     pub version: i32,
     pub text: String,
@@ -56,7 +62,14 @@ fn convert_inlay_hint(input: inlay_hint::InlayHint) -> tower_lsp::lsp_types::Inl
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        let enable_inlay_hints = params
+            .initialization_options
+            .and_then(|v| v.as_object().cloned())
+            .and_then(|o| o.get("enableInlayHints").cloned())
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
                 name: "brainfuck-lsp".to_string(),
@@ -67,7 +80,7 @@ impl LanguageServer for Backend {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::FULL,
                 )),
-                inlay_hint_provider: Some(OneOf::Left(true)),
+                inlay_hint_provider: Some(OneOf::Left(enable_inlay_hints)),
                 ..Default::default()
             },
             ..Default::default()
@@ -155,6 +168,17 @@ impl LanguageServer for Backend {
         let mut hash_map = self.text_documents.lock().unwrap();
         hash_map.remove(&params.text_document.uri.to_string());
     }
+
+    async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {
+        if let Some(settings) = params.settings.as_object() {
+            if let Some(vs_brainfuck) = settings.get("vscodeBrainfuck") {
+                if let Some(enable_inlay_hints) = vs_brainfuck.get("enableInlayHints") {
+                    let mut backend = self.inner.lock().unwrap();
+                    backend.enable_inlay_hints = enable_inlay_hints.as_bool().unwrap_or(true);
+                }
+            }
+        }
+    }
 }
 
 impl Backend {
@@ -212,6 +236,15 @@ impl Backend {
     }
 
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Vec<InlayHint>> {
+        let enable_inlay_hints = {
+            let backend = self.inner.lock().unwrap();
+            backend.enable_inlay_hints
+        };
+
+        if !enable_inlay_hints {
+            return Ok(Vec::new());
+        }
+
         self.client
             .log_message(
                 MessageType::INFO,
@@ -254,6 +287,9 @@ async fn main() {
     let (service, socket) = LspService::build(|client| Backend {
         client,
         text_documents: Default::default(),
+        inner: Arc::new(Mutex::new(BackendState {
+            enable_inlay_hints: true,
+        })),
     })
     .custom_method("textDocument/inlayHint", Backend::inlay_hint)
     .finish();
