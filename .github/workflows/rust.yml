@@ -27,3 +27,8 @@ jobs:
       run: make
     - name: test
       run: cargo test --verbose
+    - name: Archive production artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: brainfuck-all-in-one.vsix
+        path: vscode-brainfuck/brainfuck-all-in-one.vsix
