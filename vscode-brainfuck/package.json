@@ -56,6 +56,11 @@
 					],
 					"default": "off",
 					"description": "Traces the communication between VS Code and the DAP server."
+				},
+				"vscodeBrainfuck.enableInlayHints": {
+					"type": "boolean",
+					"default": true,
+					"description": "Enable inlay hints for Brainfuck code. default: true"
 				}
 			}
 		},
