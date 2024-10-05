@@ -5,10 +5,11 @@ use formatter::format_pretty_string;
 use tower_lsp::jsonrpc::Result;
 // use tower_lsp::lsp_types::*;s
 use tower_lsp::lsp_types::{
-    Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
-    DidOpenTextDocumentParams,DidChangeConfigurationParams, DocumentFormattingParams, InitializeParams, InitializeResult,
-    InitializedParams, InlayHint, InlayHintParams, MessageType, OneOf, ServerCapabilities,
-    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
+    Diagnostic, DiagnosticSeverity, DidChangeConfigurationParams, DidChangeTextDocumentParams,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams,
+    InitializeParams, InitializeResult, InitializedParams, InlayHint, InlayHintParams, MessageType,
+    OneOf, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
+    TextEdit, Url,
 };
 
 use tower_lsp::{Client, LanguageServer, LspService, Server};
@@ -67,8 +68,21 @@ impl LanguageServer for Backend {
             .initialization_options
             .and_then(|v| v.as_object().cloned())
             .and_then(|o| o.get("enableInlayHints").cloned())
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
+            .and_then(|v| v.as_bool());
+
+        if let Some(enable_inlay_hints) = enable_inlay_hints {
+            {
+                let mut backend = self.inner.lock().unwrap();
+                backend.enable_inlay_hints = enable_inlay_hints;
+            }
+
+            self.client
+                .log_message(
+                    MessageType::INFO,
+                    format!("inlay hints enabled: {}", enable_inlay_hints),
+                )
+                .await;
+        }
 
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
@@ -80,7 +94,7 @@ impl LanguageServer for Backend {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::FULL,
                 )),
-                inlay_hint_provider: Some(OneOf::Left(enable_inlay_hints)),
+                inlay_hint_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -281,6 +295,12 @@ impl Backend {
 
 #[tokio::main]
 async fn main() {
+    // if param has --version, print version and exit
+    if std::env::args().any(|a| a == "--version") {
+        println!("0.1.3");
+        return;
+    }
+
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
