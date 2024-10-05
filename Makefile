@@ -1,7 +1,7 @@
 all: clean build_rust build_vscode
 
 clean:
-	- rm -r target/release
+	- rm -r target/
 	- rm -r vscode-brainfuck/server/*
 	- rm -r vscode-brainfuck/brainfuck-all-in-one.vsix
 
