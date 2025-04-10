@@ -3,7 +3,7 @@
 	"description": "Add support for Brainfuck language in VSCode",
 	"author": "LindsayWong",
 	"license": "MIT",
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"publisher": "BabyPenguin",
 	"icon": "images/icon.png",
 	"repository": {

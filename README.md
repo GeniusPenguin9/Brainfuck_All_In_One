@@ -60,6 +60,7 @@ To debug a .bf file, use following config in .vscode/launch.json:
 * 0.1.0: Initial release.
 * 0.1.1: Fix jit bug.
 * 0.1.3: Support inlay hints configuration.
+* 0.1.4: Support path with space.
 
 ## More Infomation
 * [Marketplace link](https://marketplace.visualstudio.com/items?itemName=BabyPenguin.vscode-brainfuck&ssr=false#overview)
