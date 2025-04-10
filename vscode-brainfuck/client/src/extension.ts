@@ -86,17 +86,25 @@ export async function activate(context: ExtensionContext) {
 	}
 
 	const interpreter = context.asAbsolutePath(interpreter_program.get(platform()));
-	async function launch_interpreter(jit_config: string) {
-		const file = window.activeTextEditor?.document.fileName;
-		if (existsSync(file)) {
-			const term = await createTerminal();
-			term.show();
-			term.sendText(`"${interpreter}" --mode=${jit_config} --file="${file}"`);
-		}
-		else {
-			window.showErrorMessage("Please open a valid .bf file.");
-		}
-	}
+async function launch_interpreter(jit_config: string) {
+    const file = window.activeTextEditor?.document.fileName;
+    if (existsSync(file)) {
+        if (platform().startsWith('win')) {
+            // Use cmd.exe for all Windows platforms (win32, win64, etc.)
+            const term = await createTerminal();
+            term.show();
+            // Use cmd.exe specific command format
+            term.sendText(`cmd.exe /c "${interpreter}" --mode=${jit_config} --file="${file}"`);
+        } else {
+            // Use default terminal for Linux/Unix systems
+            const term = await createTerminal();
+            term.show();
+            term.sendText(`"${interpreter}" --mode=${jit_config} --file="${file}"`);
+        }
+    } else {
+        window.showErrorMessage("Please open a valid .bf file.");
+    }
+}
 	context.subscriptions.push(
 		commands.registerCommand("brainfuck.runWithJIT", () => launch_interpreter("jit")),
 		commands.registerCommand("brainfuck.runAutoJIT", () => launch_interpreter("autojit")),

@@ -5,3 +5,6 @@
 - "version" in ./vscode-brainfuck/package.json
 
 # Merge into master
+
+# Upload
+- Download vsix file from Github - Actions - tha latest version
