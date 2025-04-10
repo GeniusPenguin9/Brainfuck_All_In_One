@@ -91,7 +91,7 @@ export async function activate(context: ExtensionContext) {
 		if (existsSync(file)) {
 			const term = await createTerminal();
 			term.show();
-			term.sendText(interpreter + " --mode=" + jit_config + " --file=\"" + file + "\"");
+			term.sendText(`"${interpreter}" --mode=${jit_config} --file="${file}"`);
 		}
 		else {
 			window.showErrorMessage("Please open a valid .bf file.");
