@@ -12,6 +12,7 @@
 * Debugging 
 
 ![](vscode-brainfuck/images/demo.png)
+![](vscode-brainfuck/images/debug.png)
 
 ### Supported Platforms:
 * Windows x86_64
