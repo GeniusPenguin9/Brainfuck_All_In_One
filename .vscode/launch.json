@@ -28,7 +28,7 @@
 			"outFiles": [
 				"${workspaceRoot}/vscode-brainfuck/client/out/**/*.js"
 			],
-			"preLaunchTask": "build all"
+			// "preLaunchTask": "build all"
 		},
 		{
 			"name": "brainfuck test.bf",

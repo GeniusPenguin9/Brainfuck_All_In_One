@@ -12,6 +12,7 @@
 * Debugging 
 
 ![](vscode-brainfuck/images/demo.png)
+![](vscode-brainfuck/images/debug.png)
 
 ### Supported Platforms:
 * Windows x86_64
@@ -61,6 +62,7 @@ To debug a .bf file, use following config in .vscode/launch.json:
 * 0.1.1: Fix jit bug.
 * 0.1.3: Support inlay hints configuration.
 * 0.1.4: Support path with space.
+* 0.1.5: Fix vscode can't add breakpoint
 
 ## More Infomation
 * [Marketplace link](https://marketplace.visualstudio.com/items?itemName=BabyPenguin.vscode-brainfuck&ssr=false#overview)

@@ -1,4 +1,4 @@
-![](images/brainfuck.png)
+![](https://github.com/GeniusPenguin9/Brainfuck_All_In_One/raw/master/vscode-brainfuck/images/brainfuck.png)
 # Brainfuck All In One
 [Brainfuck All In One](https://marketplace.visualstudio.com/items?itemName=BabyPenguin.vscode-brainfuck) provides full support for brainfuck developing.
 
@@ -11,7 +11,8 @@
 * Running brainfuck program with/without JIT
 * Debugging
 
-![](images/demo.png)
+![](https://github.com/GeniusPenguin9/Brainfuck_All_In_One/raw/master/vscode-brainfuck/images/demo.png)
+![](https://github.com/GeniusPenguin9/Brainfuck_All_In_One/raw/master/vscode-brainfuck/images/debug.png)
 
 ### Formatting
 Use 'Format Document' command to format current .bf file.
@@ -57,6 +58,7 @@ To debug a .bf file, use following config in .vscode/launch.json:
 * 0.1.1: Fix jit bug.
 * 0.1.3: Support inlay hints configuration.
 * 0.1.4: Support path with space.
+* 0.1.5: Fix vscode can't add breakpoint
 
 ## More Information
 * [Marketplace link](https://marketplace.visualstudio.com/items?itemName=BabyPenguin.vscode-brainfuck&ssr=false#overview)
